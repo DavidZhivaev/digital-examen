@@ -5,6 +5,7 @@ from pathlib import Path
 
 import bcrypt
 import jwt
+from jwt.exceptions import InvalidTokenError
 
 from core.config import settings
 
@@ -39,27 +40,49 @@ _private_key, _public_key = _ensure_keys()
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(
+        password.encode(),
+        bcrypt.gensalt(rounds=settings.BCRYPT_ROUNDS),
+    ).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        return False
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+def verify_token_hash(token: str, token_hash: str) -> bool:
+    return secrets.compare_digest(hash_token(token), token_hash)
+
+
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def create_access_token(*, user_id: int, person_id: str, role: int) -> str:
-    expire = _utcnow() + timedelta(days=settings.ACCESS_TOKEN_EXPIRE_DAYS)
+def _base_payload() -> dict:
+    now = _utcnow()
+    return {
+        "iss": settings.JWT_ISSUER,
+        "aud": settings.JWT_AUDIENCE,
+        "iat": now,
+        "nbf": now,
+    }
+
+
+def create_access_token(*, user_id: int, person_id: str, role: int, session_id: int) -> str:
+    expire = _utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
+        **_base_payload(),
         "sub": str(user_id),
         "person_id": person_id,
         "role": role,
+        "sid": session_id,
         "type": "access",
         "exp": expire,
     }
@@ -69,10 +92,11 @@ def create_access_token(*, user_id: int, person_id: str, role: int) -> str:
 def create_refresh_token(*, user_id: int, session_id: int) -> tuple[str, datetime]:
     expire = _utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
+        **_base_payload(),
         "sub": str(user_id),
         "sid": session_id,
         "type": "refresh",
-        "jti": secrets.token_urlsafe(16),
+        "jti": secrets.token_urlsafe(32),
         "exp": expire,
     }
     token = jwt.encode(payload, _private_key, algorithm=settings.ALGORITHM)
@@ -80,4 +104,11 @@ def create_refresh_token(*, user_id: int, session_id: int) -> tuple[str, datetim
 
 
 def decode_token(token: str) -> dict:
-    return jwt.decode(token, _public_key, algorithms=[settings.ALGORITHM])
+    return jwt.decode(
+        token,
+        _public_key,
+        algorithms=[settings.ALGORITHM],
+        audience=settings.JWT_AUDIENCE,
+        issuer=settings.JWT_ISSUER,
+        options={"require": ["exp", "iat", "nbf", "sub", "type"]},
+    )

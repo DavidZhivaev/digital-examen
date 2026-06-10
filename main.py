@@ -7,8 +7,12 @@ from analytics.routers import router as analytics_router
 from auth.routers import router as auth_router
 from core.config import settings
 from core.database import init_db
+from core.logging_config import setup_logging
+from core.middleware import AuthRequestLoggingMiddleware, SecurityHeadersMiddleware
 from mail.routers import router as mail_router
 from users.routers import router as users_router
+
+setup_logging()
 
 
 @asynccontextmanager
@@ -20,11 +24,16 @@ app = FastAPI(
     title=settings.APP_NAME,
     debug=settings.DEBUG,
     lifespan=lifespan,
+    docs_url="/docs" if settings.DEBUG else None,
+    redoc_url="/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(AuthRequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if settings.DEBUG else [],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

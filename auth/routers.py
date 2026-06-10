@@ -1,6 +1,8 @@
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
+from jwt.exceptions import InvalidTokenError
 
 from auth.models import Session
 from auth.schemas import (
@@ -10,18 +12,27 @@ from auth.schemas import (
     SessionResponse,
     TokenResponse,
 )
+from auth.session_service import (
+    handle_refresh_token_mismatch,
+    revoke_all_user_sessions,
+    trim_user_sessions,
+)
 from core.config import settings
 from core.permissions import min_perms
+from core.rate_limit import check_login_rate_limit
 from core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
     hash_token,
     verify_password,
+    verify_token_hash,
 )
 from users.models import User
 
 router = APIRouter()
+
+_LOGIN_FAIL_DELAY_SECONDS = 0.5
 
 
 def _utcnow() -> datetime:
@@ -51,7 +62,8 @@ async def _get_valid_session(session_id: int, refresh_token: str) -> Session:
     if session.expires_at < _utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия истекла")
 
-    if session.refresh_token_hash != hash_token(refresh_token):
+    if not verify_token_hash(refresh_token, session.refresh_token_hash):
+        await handle_refresh_token_mismatch(session, refresh_token)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный refresh-токен")
 
     return session
@@ -64,8 +76,11 @@ async def health():
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request):
+    check_login_rate_limit(request)
+
     user = await User.get_or_none(login=body.login)
     if user is None or not verify_password(body.password, user.password_hash):
+        await asyncio.sleep(_LOGIN_FAIL_DELAY_SECONDS)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный логин или пароль")
 
     session = await Session.create(
@@ -81,6 +96,8 @@ async def login(body: LoginRequest, request: Request):
     session.expires_at = expires_at
     await session.save()
 
+    await trim_user_sessions(user.id)
+
     user.last_do = _utcnow()
     await user.save(update_fields=["last_do"])
 
@@ -88,6 +105,7 @@ async def login(body: LoginRequest, request: Request):
         user_id=user.id,
         person_id=user.person_id,
         role=user.role,
+        session_id=session.id,
     )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
@@ -96,7 +114,7 @@ async def login(body: LoginRequest, request: Request):
 async def refresh(body: RefreshRequest):
     try:
         payload = decode_token(body.refresh_token)
-    except Exception:
+    except InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
 
     if payload.get("type") != "refresh":
@@ -117,6 +135,7 @@ async def refresh(body: RefreshRequest):
         user_id=user.id,
         person_id=user.person_id,
         role=user.role,
+        session_id=session.id,
     )
     return TokenResponse(access_token=access_token, refresh_token=new_refresh)
 
@@ -125,7 +144,7 @@ async def refresh(body: RefreshRequest):
 async def logout(body: LogoutRequest):
     try:
         payload = decode_token(body.refresh_token)
-    except Exception:
+    except InvalidTokenError:
         return None
 
     if payload.get("type") != "refresh":
@@ -135,7 +154,7 @@ async def logout(body: LogoutRequest):
     if session is None:
         return None
 
-    if session.refresh_token_hash == hash_token(body.refresh_token) and session.revoked_at is None:
+    if verify_token_hash(body.refresh_token, session.refresh_token_hash) and session.revoked_at is None:
         session.revoked_at = _utcnow()
         await session.save(update_fields=["revoked_at"])
 
@@ -166,8 +185,7 @@ async def revoke_session(session_id: int, current_user: User):
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(1)
 async def logout_all(current_user: User):
-    now = _utcnow()
-    await Session.filter(user_id=current_user.id, revoked_at__isnull=True).update(revoked_at=now)
+    await revoke_all_user_sessions(current_user.id)
     return None
 
 
@@ -177,6 +195,5 @@ async def revoke_user_sessions(user_id: int, current_user: User):
     if not await User.exists(id=user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
-    now = _utcnow()
-    await Session.filter(user_id=user_id, revoked_at__isnull=True).update(revoked_at=now)
+    await revoke_all_user_sessions(user_id)
     return None

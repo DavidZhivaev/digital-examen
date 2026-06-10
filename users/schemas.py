@@ -1,48 +1,76 @@
 from datetime import datetime
+import re
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+_PASSWORD_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
 
 
 class UserBase(BaseModel):
     email: EmailStr
-    login: str
-    role: int = 1
+    login: str = Field(min_length=3, max_length=64)
+    role: int = Field(default=1, ge=1)
     class_id: int | None = Field(None, alias="class")
-    first_name: str
-    last_name: str
-    middle_name: str | None = None
-    sex: int | None = None
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    middle_name: str | None = Field(None, max_length=255)
+    sex: int | None = Field(None, ge=1, le=2)
     email_accept: bool = False
 
     model_config = ConfigDict(populate_by_name=True)
 
 
 class UserCreate(UserBase):
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str) -> str:
+        if not _PASSWORD_RE.match(value):
+            raise ValueError("Пароль должен быть не короче 8 символов и содержать буквы и цифры")
+        return value
 
 
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
-    login: str | None = None
-    password: str | None = Field(None, min_length=6)
-    role: int | None = None
+    login: str | None = Field(None, min_length=3, max_length=64)
+    password: str | None = Field(None, min_length=8, max_length=128)
+    role: int | None = Field(None, ge=1)
     class_id: int | None = Field(None, alias="class")
-    first_name: str | None = None
-    last_name: str | None = None
-    middle_name: str | None = None
-    sex: int | None = None
+    first_name: str | None = Field(None, min_length=1, max_length=255)
+    last_name: str | None = Field(None, min_length=1, max_length=255)
+    middle_name: str | None = Field(None, max_length=255)
+    sex: int | None = Field(None, ge=1, le=2)
     email_accept: bool | None = None
 
     model_config = ConfigDict(populate_by_name=True)
 
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str | None) -> str | None:
+        if value is not None and not _PASSWORD_RE.match(value):
+            raise ValueError("Пароль должен быть не короче 8 символов и содержать буквы и цифры")
+        return value
+
+
+class RoleUpdate(BaseModel):
+    role: int = Field(ge=1)
+
 
 class UserSelfUpdate(BaseModel):
     email: EmailStr | None = None
-    password: str | None = Field(None, min_length=6)
-    first_name: str | None = None
-    last_name: str | None = None
-    middle_name: str | None = None
-    sex: int | None = None
+    password: str | None = Field(None, min_length=8, max_length=128)
+    first_name: str | None = Field(None, min_length=1, max_length=255)
+    last_name: str | None = Field(None, min_length=1, max_length=255)
+    middle_name: str | None = Field(None, max_length=255)
+    sex: int | None = Field(None, ge=1, le=2)
+
+    @field_validator("password")
+    @classmethod
+    def validate_password_strength(cls, value: str | None) -> str | None:
+        if value is not None and not _PASSWORD_RE.match(value):
+            raise ValueError("Пароль должен быть не короче 8 символов и содержать буквы и цифры")
+        return value
 
 
 class UserResponse(BaseModel):
@@ -61,3 +89,11 @@ class UserResponse(BaseModel):
     last_do: datetime
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+
+class PaginatedUsersResponse(BaseModel):
+    items: list[UserResponse]
+    total: int
+    page: int
+    page_size: int
+    pages: int

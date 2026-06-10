@@ -17,7 +17,10 @@ async def main():
     await Tortoise.generate_schemas()
 
     login = input("Логин администратора: ").strip()
-    password = input("Пароль: ").strip()
+    password = input("Пароль (мин. 8 символов, буквы и цифры): ").strip()
+    if len(password) < 8 or not any(c.isalpha() for c in password) or not any(c.isdigit() for c in password):
+        print("Пароль не соответствует требованиям безопасности")
+        return
     email = input("Email: ").strip()
     first_name = input("Фамилия: ").strip()
     last_name = input("Имя: ").strip()

@@ -1,13 +1,24 @@
 from datetime import datetime, timezone
+import math
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from tortoise.exceptions import IntegrityError
 
+from auth.session_service import revoke_all_user_sessions
 from core.config import settings
 from core.permissions import min_perms
 from core.security import hash_password
+from users.admin_service import validate_admin_can_manage, validate_assignable_role
 from users.models import User
-from users.schemas import UserCreate, UserResponse, UserSelfUpdate, UserUpdate
+from users.role_service import validate_role_change
+from users.schemas import (
+    PaginatedUsersResponse,
+    RoleUpdate,
+    UserCreate,
+    UserResponse,
+    UserSelfUpdate,
+    UserUpdate,
+)
 
 router = APIRouter()
 
@@ -49,7 +60,8 @@ async def get_me(current_user: User):
 @min_perms(1)
 async def update_me(body: UserSelfUpdate, current_user: User):
     data = body.model_dump(exclude_unset=True)
-    if "password" in data:
+    password_changed = "password" in data
+    if password_changed:
         data["password_hash"] = hash_password(data.pop("password"))
 
     for field, value in data.items():
@@ -57,14 +69,31 @@ async def update_me(body: UserSelfUpdate, current_user: User):
 
     current_user.last_do = _utcnow()
     await current_user.save()
+
+    if password_changed:
+        await revoke_all_user_sessions(current_user.id)
+
     return _user_to_response(current_user)
 
 
-@router.get("/", response_model=list[UserResponse])
+@router.get("/", response_model=PaginatedUsersResponse)
 @min_perms(settings.ADMIN_ROLE)
-async def list_users(current_user: User):
-    users = await User.all().order_by("id")
-    return [_user_to_response(u) for u in users]
+async def list_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(settings.USERS_PAGE_SIZE_DEFAULT, ge=1, le=settings.USERS_PAGE_SIZE_MAX),
+):
+    total = await User.all().count()
+    pages = max(1, math.ceil(total / page_size)) if total else 1
+    offset = (page - 1) * page_size
+    users = await User.all().order_by("id").offset(offset).limit(page_size)
+
+    return PaginatedUsersResponse(
+        items=[_user_to_response(u) for u in users],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @router.get("/{user_id}", response_model=UserResponse)
@@ -73,12 +102,16 @@ async def get_user(user_id: int, current_user: User):
     user = await User.get_or_none(id=user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    validate_admin_can_manage(current_user, user)
     return _user_to_response(user)
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 @min_perms(settings.ADMIN_ROLE)
 async def create_user(body: UserCreate, current_user: User):
+    validate_assignable_role(current_user, body.role)
+
     data = body.model_dump()
     password = data.pop("password")
     data["password_hash"] = hash_password(password)
@@ -94,6 +127,24 @@ async def create_user(body: UserCreate, current_user: User):
     return _user_to_response(user)
 
 
+@router.patch("/{user_id}/role", response_model=UserResponse)
+@min_perms(settings.ADMIN_ROLE)
+async def update_user_role(user_id: int, body: RoleUpdate, current_user: User):
+    user = await User.get_or_none(id=user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    await validate_role_change(current_user, user, body.role)
+
+    if user.role != body.role:
+        user.role = body.role
+        user.last_do = _utcnow()
+        await user.save(update_fields=["role", "last_do"])
+        await revoke_all_user_sessions(user.id)
+
+    return _user_to_response(user)
+
+
 @router.patch("/{user_id}", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
 async def update_user(user_id: int, body: UserUpdate, current_user: User):
@@ -101,8 +152,19 @@ async def update_user(user_id: int, body: UserUpdate, current_user: User):
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
+    validate_admin_can_manage(current_user, user)
+
     data = body.model_dump(exclude_unset=True)
-    if "password" in data:
+    password_changed = "password" in data
+    role_changed = "role" in data
+
+    if role_changed:
+        await validate_role_change(current_user, user, data["role"])
+
+    if "role" in data:
+        validate_assignable_role(current_user, data["role"])
+
+    if password_changed:
         data["password_hash"] = hash_password(data.pop("password"))
 
     for field, value in data.items():
@@ -117,6 +179,9 @@ async def update_user(user_id: int, body: UserUpdate, current_user: User):
             detail="Пользователь с таким email или логином уже существует",
         )
 
+    if password_changed or role_changed:
+        await revoke_all_user_sessions(user.id)
+
     return _user_to_response(user)
 
 
@@ -129,8 +194,20 @@ async def delete_user(user_id: int, current_user: User):
             detail="Нельзя удалить собственную учётную запись",
         )
 
-    deleted = await User.filter(id=user_id).delete()
-    if not deleted:
+    user = await User.get_or_none(id=user_id)
+    if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
+    validate_admin_can_manage(current_user, user)
+
+    if user.role >= settings.ADMIN_ROLE:
+        admin_count = await User.filter(role__gte=settings.ADMIN_ROLE).count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Нельзя удалить последнего администратора",
+            )
+
+    await revoke_all_user_sessions(user.id)
+    await user.delete()
     return None
