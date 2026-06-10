@@ -2,26 +2,127 @@ import time
 from collections import defaultdict, deque
 
 from fastapi import HTTPException, Request, status
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
+from starlette.responses import JSONResponse, Response
 
 from core.config import settings
+from core.security import decode_token
 
-_attempts: dict[str, deque[float]] = defaultdict(deque)
+_HEALTH_SUFFIXES = ("/health",)
+_EXEMPT_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json"}
+
+
+class SlidingWindowLimiter:
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._buckets: dict[str, deque[float]] = defaultdict(deque)
+        self._last_cleanup = time.monotonic()
+
+    def check(self, key: str) -> tuple[bool, int]:
+        now = time.monotonic()
+        self._cleanup(now)
+
+        bucket = self._buckets[key]
+        cutoff = now - self.window_seconds
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+
+        if len(bucket) >= self.max_requests:
+            retry_after = int(self.window_seconds - (now - bucket[0])) + 1
+            return False, max(1, retry_after)
+
+        bucket.append(now)
+        return True, 0
+
+    def _cleanup(self, now: float) -> None:
+        if now - self._last_cleanup < 120:
+            return
+        self._last_cleanup = now
+        cutoff = now - self.window_seconds
+        stale_keys = []
+        for key, bucket in self._buckets.items():
+            while bucket and bucket[0] <= cutoff:
+                bucket.popleft()
+            if not bucket:
+                stale_keys.append(key)
+        for key in stale_keys:
+            del self._buckets[key]
+
+
+_ip_limiter = SlidingWindowLimiter(
+    settings.RATE_LIMIT_IP_MAX_REQUESTS,
+    settings.RATE_LIMIT_IP_WINDOW_SECONDS,
+)
+_user_limiter = SlidingWindowLimiter(
+    settings.RATE_LIMIT_USER_MAX_REQUESTS,
+    settings.RATE_LIMIT_USER_WINDOW_SECONDS,
+)
+_login_limiter = SlidingWindowLimiter(
+    settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
+    settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
+)
+
+
+def client_ip(request: Request | StarletteRequest) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
+def _extract_user_id(request: Request | StarletteRequest) -> str | None:
+    auth = request.headers.get("authorization")
+    if not auth or not auth.lower().startswith("bearer "):
+        return None
+    try:
+        payload = decode_token(auth[7:].strip())
+    except Exception:
+        return None
+    if payload.get("type") != "access":
+        return None
+    return payload.get("sub")
+
+
+def _is_exempt(path: str) -> bool:
+    if path in _EXEMPT_PATHS:
+        return True
+    return any(path.endswith(suffix) for suffix in _HEALTH_SUFFIXES)
 
 
 def check_login_rate_limit(request: Request) -> None:
-    ip = request.client.host if request.client else "unknown"
-    now = time.monotonic()
-    window = settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS
-    max_attempts = settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS
-
-    bucket = _attempts[ip]
-    while bucket and bucket[0] <= now - window:
-        bucket.popleft()
-
-    if len(bucket) >= max_attempts:
+    allowed, retry_after = _login_limiter.check(f"login:{client_ip(request)}")
+    if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Слишком много попыток входа. Попробуйте позже.",
+            headers={"Retry-After": str(retry_after)},
         )
 
-    bucket.append(now)
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: StarletteRequest, call_next) -> Response:
+        if not settings.RATE_LIMIT_ENABLED:
+            return await call_next(request)
+
+        path = request.url.path
+        if _is_exempt(path):
+            return await call_next(request)
+
+        user_id = _extract_user_id(request)
+        if user_id is not None:
+            allowed, retry_after = _user_limiter.check(f"user:{user_id}")
+        else:
+            allowed, retry_after = _ip_limiter.check(f"ip:{client_ip(request)}")
+
+        if not allowed:
+            return JSONResponse(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                content={"detail": "Слишком много запросов. Попробуйте позже."},
+                headers={"Retry-After": str(retry_after)},
+            )
+
+        return await call_next(request)

@@ -26,7 +26,15 @@ class Settings(BaseSettings):
 
     BCRYPT_ROUNDS: int = 12
 
-    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 10
+    RATE_LIMIT_ENABLED: bool = True
+    # Лимит по IP (вся школа может сидеть за одним NAT)
+    RATE_LIMIT_IP_MAX_REQUESTS: int = 10_000
+    RATE_LIMIT_IP_WINDOW_SECONDS: int = 60
+    # Лимит по авторизованному пользователю
+    RATE_LIMIT_USER_MAX_REQUESTS: int = 3_000
+    RATE_LIMIT_USER_WINDOW_SECONDS: int = 60
+
+    LOGIN_RATE_LIMIT_MAX_ATTEMPTS: int = 60
     LOGIN_RATE_LIMIT_WINDOW_SECONDS: int = 60
 
     USERS_PAGE_SIZE_DEFAULT: int = 20

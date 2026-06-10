@@ -9,6 +9,7 @@ from core.config import settings
 from core.database import init_db
 from core.logging_config import setup_logging
 from core.middleware import AuthRequestLoggingMiddleware, SecurityHeadersMiddleware
+from core.rate_limit import RateLimitMiddleware
 from mail.routers import router as mail_router
 from users.routers import router as users_router
 
@@ -38,6 +39,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/users", tags=["users"])
