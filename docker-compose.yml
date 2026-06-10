@@ -1,0 +1,28 @@
+services:
+  api:
+    build: .
+    container_name: digital-examen-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      DB_URL: sqlite:///data/db.sqlite3
+      PRIVATE_KEY_PATH: keys/private.pem
+      PUBLIC_KEY_PATH: keys/public.pem
+    volumes:
+      - ./data:/data
+      - ./keys:/app/keys
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
