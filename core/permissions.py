@@ -1,0 +1,52 @@
+import functools
+import inspect
+from typing import Callable
+
+from fastapi import Depends, HTTPException, status
+
+from core.deps import get_current_user
+from users.models import User
+
+
+def min_perms(min_role: int) -> Callable:
+    """Декоратор: доступ только при role >= min_role."""
+
+    async def checker(user: User = Depends(get_current_user)) -> User:
+        if user.role < min_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав",
+            )
+        return user
+
+    def decorator(endpoint: Callable) -> Callable:
+        sig = inspect.signature(endpoint)
+        params = list(sig.parameters.values())
+
+        for i, param in enumerate(params):
+            if param.name == "current_user":
+                params[i] = inspect.Parameter(
+                    "current_user",
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=User,
+                    default=Depends(checker),
+                )
+                break
+        else:
+            params.append(
+                inspect.Parameter(
+                    "current_user",
+                    inspect.Parameter.KEYWORD_ONLY,
+                    annotation=User,
+                    default=Depends(checker),
+                )
+            )
+
+        @functools.wraps(endpoint)
+        async def wrapper(*args, **kwargs):
+            return await endpoint(*args, **kwargs)
+
+        wrapper.__signature__ = sig.replace(parameters=params)
+        return wrapper
+
+    return decorator

@@ -5,7 +5,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Школа 1580"
     DEBUG: bool = True
 
-    DB_URL: str
+    DB_URL: str = "sqlite://db.sqlite3"
 
     ALGORITHM: str = "RS256"
 
@@ -14,6 +14,9 @@ class Settings(BaseSettings):
 
     PRIVATE_KEY_PATH: str = "keys/private.pem"
     PUBLIC_KEY_PATH: str = "keys/public.pem"
+
+    # role >= 10 — администратор
+    ADMIN_ROLE: int = 10
 
     class Config:
         env_file = ".env"
