@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     PRIVATE_KEY_PATH: str = "keys/private.pem"
     PUBLIC_KEY_PATH: str = "keys/public.pem"
 
-    # role >= 10 — администратор
-    ADMIN_ROLE: int = 10
+    # role >= 5 — администратор
+    ADMIN_ROLE: int = 5
 
     class Config:
         env_file = ".env"
