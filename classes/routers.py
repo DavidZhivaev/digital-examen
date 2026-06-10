@@ -1,5 +1,4 @@
 from fastapi import APIRouter, HTTPException, status
-from tortoise.exceptions import IntegrityError
 
 from classes.models import SchoolClass
 from classes.permissions import ensure_can_manage_class, is_homeroom_teacher, is_operator_or_above
@@ -8,6 +7,7 @@ from classes.schemas import (
     AssignTeacherRequest,
     ClassCreate,
     ClassResponse,
+    ClassStudentResponse,
     ClassUpdate,
     MoveGroupRequest,
     StudentInviteRequest,
@@ -18,10 +18,16 @@ from classes.service import (
     _class_to_response,
     add_existing_student,
     assign_teacher,
+    create_class,
+    delete_class,
     get_class_or_404,
     invite_student,
+    list_class_students,
     move_student_group,
+    remove_student_from_class,
     transfer_student,
+    unassign_teacher,
+    update_class_fields,
 )
 from core.config import settings
 from core.permissions import min_perms
@@ -46,14 +52,28 @@ async def health():
     return {"service": "classes", "status": "ok"}
 
 
+# --- CRUD класса ---
+
 @router.get("/", response_model=list[ClassResponse])
 @min_perms(ROLE_TEACHER)
 async def list_classes(current_user: User):
     if is_operator_or_above(current_user):
-        classes = await SchoolClass.all().order_by("parallel", "litera")
+        classes = await SchoolClass.all().order_by("corpus", "parallel", "litera")
     else:
-        classes = await SchoolClass.filter(teacher_id=current_user.id).order_by("parallel", "litera")
+        classes = await SchoolClass.filter(teacher_id=current_user.id).order_by("corpus", "parallel", "litera")
     return [_class_to_response(c) for c in classes]
+
+
+@router.post("/", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
+@min_perms(settings.OPERATOR_ROLE)
+async def create_class_endpoint(body: ClassCreate, current_user: User):
+    school_class = await create_class(
+        parallel=body.parallel,
+        litera=body.litera,
+        corpus=body.corpus,
+        teacher_id=body.teacher_id,
+    )
+    return _class_to_response(school_class)
 
 
 @router.get("/{class_id}", response_model=ClassResponse)
@@ -64,41 +84,24 @@ async def get_class(class_id: int, current_user: User):
     return _class_to_response(school_class)
 
 
-@router.post("/", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
-@min_perms(settings.OPERATOR_ROLE)
-async def create_class(body: ClassCreate, current_user: User):
-    try:
-        school_class = await SchoolClass.create(
-            parallel=body.parallel,
-            litera=body.litera.upper(),
-            corpus=body.corpus,
-            group_first=[],
-            group_second=[],
-            history=[],
-        )
-    except IntegrityError:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Класс уже существует")
-
-    if body.teacher_id is not None:
-        school_class = await assign_teacher(school_class, body.teacher_id)
-
-    return _class_to_response(school_class)
-
-
 @router.patch("/{class_id}", response_model=ClassResponse)
 @min_perms(ROLE_TEACHER)
 async def update_class(class_id: int, body: ClassUpdate, current_user: User):
     school_class = await get_class_or_404(class_id)
     ensure_can_manage_class(current_user, school_class)
-
-    data = body.model_dump(exclude_unset=True)
-    if "litera" in data:
-        data["litera"] = data["litera"].upper()
-    for field, value in data.items():
-        setattr(school_class, field, value)
-    await school_class.save()
+    school_class = await update_class_fields(school_class, body.model_dump(exclude_unset=True))
     return _class_to_response(school_class)
 
+
+@router.delete("/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
+@min_perms(settings.OPERATOR_ROLE)
+async def delete_class_endpoint(class_id: int, current_user: User):
+    school_class = await get_class_or_404(class_id)
+    await delete_class(school_class)
+    return None
+
+
+# --- Классный руководитель ---
 
 @router.patch("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
@@ -106,6 +109,25 @@ async def set_class_teacher(class_id: int, body: AssignTeacherRequest, current_u
     school_class = await get_class_or_404(class_id)
     school_class = await assign_teacher(school_class, body.teacher_id)
     return _class_to_response(school_class)
+
+
+@router.delete("/{class_id}/teacher", response_model=ClassResponse)
+@min_perms(settings.OPERATOR_ROLE)
+async def remove_class_teacher(class_id: int, current_user: User):
+    school_class = await get_class_or_404(class_id)
+    school_class = await unassign_teacher(school_class)
+    return _class_to_response(school_class)
+
+
+# --- Ученики класса ---
+
+@router.get("/{class_id}/students", response_model=list[ClassStudentResponse])
+@min_perms(ROLE_TEACHER)
+async def get_class_students(class_id: int, current_user: User):
+    school_class = await get_class_or_404(class_id)
+    ensure_can_manage_class(current_user, school_class)
+    students = await list_class_students(school_class)
+    return [ClassStudentResponse.model_validate(s) for s in students]
 
 
 @router.post("/{class_id}/students/invite", response_model=StudentInviteResponse, status_code=status.HTTP_201_CREATED)
@@ -154,6 +176,15 @@ async def add_student_to_class(class_id: int, body: AddExistingStudentRequest, c
         group=body.group,
         password_link_sent=False,
     )
+
+
+@router.delete("/{class_id}/students/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@min_perms(ROLE_TEACHER)
+async def remove_student_from_class_endpoint(class_id: int, user_id: int, current_user: User):
+    school_class = await get_class_or_404(class_id)
+    _ensure_homeroom_or_operator(current_user, school_class)
+    await remove_student_from_class(actor=current_user, school_class=school_class, user_id=user_id)
+    return None
 
 
 @router.patch("/{class_id}/students/{user_id}/group", response_model=StudentInviteResponse)

@@ -51,8 +51,21 @@ class ClassResponse(BaseModel):
     history: list[int]
     corpus: int
     display_name: str
+    students_count: int = 0
 
     model_config = {"from_attributes": True}
+
+
+class ClassStudentResponse(BaseModel):
+    id: int
+    person_id: str
+    email: str
+    login: str
+    first_name: str
+    last_name: str
+    middle_name: str | None
+    group: int
+    must_set_password: bool = False
 
 
 class StudentInviteResponse(BaseModel):

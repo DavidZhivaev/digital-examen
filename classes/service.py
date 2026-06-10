@@ -27,17 +27,26 @@ def _normalize_group_ids(ids: list) -> list[int]:
     return [int(x) for x in ids if x is not None]
 
 
+def _active_student_ids(school_class: SchoolClass) -> list[int]:
+    first = _normalize_group_ids(school_class.group_first or [])
+    second = _normalize_group_ids(school_class.group_second or [])
+    return list(dict.fromkeys(first + second))
+
+
 def _class_to_response(school_class: SchoolClass) -> dict:
+    group_first = _normalize_group_ids(school_class.group_first or [])
+    group_second = _normalize_group_ids(school_class.group_second or [])
     return {
         "id": school_class.id,
         "teacher_id": school_class.teacher_id,
         "parallel": school_class.parallel,
         "litera": school_class.litera,
-        "group_first": _normalize_group_ids(school_class.group_first or []),
-        "group_second": _normalize_group_ids(school_class.group_second or []),
+        "group_first": group_first,
+        "group_second": group_second,
         "history": _normalize_group_ids(school_class.history or []),
         "corpus": school_class.corpus,
         "display_name": school_class.display_name,
+        "students_count": len(group_first) + len(group_second),
     }
 
 
@@ -232,6 +241,127 @@ async def transfer_student(
     _add_to_group(target_class, student.id, group)
     await target_class.save()
     return student
+
+
+async def create_class(
+    *,
+    parallel: int,
+    litera: str,
+    corpus: int,
+    teacher_id: int | None = None,
+) -> SchoolClass:
+    litera = litera.upper()
+    exists = await SchoolClass.filter(parallel=parallel, litera=litera, corpus=corpus).exists()
+    if exists:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Класс {parallel}{litera} (корпус {corpus}) уже существует",
+        )
+
+    try:
+        school_class = await SchoolClass.create(
+            parallel=parallel,
+            litera=litera,
+            corpus=corpus,
+            group_first=[],
+            group_second=[],
+            history=[],
+        )
+    except IntegrityError:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Класс уже существует")
+
+    if teacher_id is not None:
+        school_class = await assign_teacher(school_class, teacher_id)
+    return school_class
+
+
+async def update_class_fields(school_class: SchoolClass, data: dict) -> SchoolClass:
+    if "litera" in data:
+        data["litera"] = data["litera"].upper()
+
+    new_parallel = data.get("parallel", school_class.parallel)
+    new_litera = data.get("litera", school_class.litera)
+    new_corpus = data.get("corpus", school_class.corpus)
+
+    if (new_parallel, new_litera, new_corpus) != (school_class.parallel, school_class.litera, school_class.corpus):
+        duplicate = await SchoolClass.filter(
+            parallel=new_parallel,
+            litera=new_litera,
+            corpus=new_corpus,
+        ).exclude(id=school_class.id).exists()
+        if duplicate:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Класс {new_parallel}{new_litera} (корпус {new_corpus}) уже существует",
+            )
+
+    for field, value in data.items():
+        setattr(school_class, field, value)
+    await school_class.save()
+    return school_class
+
+
+async def delete_class(school_class: SchoolClass) -> None:
+    for user_id in _active_student_ids(school_class):
+        student = await User.get_or_none(id=user_id)
+        if student is None:
+            continue
+        _add_to_history(school_class, user_id)
+        student.class_id = None
+        student.class_group = None
+        await student.save(update_fields=["class_id", "class_group"])
+
+    await school_class.save()
+    await school_class.delete()
+
+
+async def unassign_teacher(school_class: SchoolClass) -> SchoolClass:
+    school_class.teacher_id = None
+    await school_class.save()
+    return school_class
+
+
+async def list_class_students(school_class: SchoolClass) -> list[dict]:
+    result = []
+    for group_num, ids in ((1, school_class.group_first or []), (2, school_class.group_second or [])):
+        for user_id in _normalize_group_ids(ids):
+            student = await User.get_or_none(id=user_id)
+            if student is None:
+                continue
+            result.append(
+                {
+                    "id": student.id,
+                    "person_id": student.person_id,
+                    "email": student.email,
+                    "login": student.login,
+                    "first_name": student.first_name,
+                    "last_name": student.last_name,
+                    "middle_name": student.middle_name,
+                    "group": group_num,
+                    "must_set_password": student.must_set_password,
+                }
+            )
+    return result
+
+
+async def remove_student_from_class(
+    *,
+    actor: User,
+    school_class: SchoolClass,
+    user_id: int,
+) -> None:
+    ensure_can_manage_class(actor, school_class)
+    student = await User.get_or_none(id=user_id, class_id=school_class.id)
+    if student is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Ученик не найден в этом классе")
+
+    _remove_from_groups(school_class, user_id)
+    _add_to_history(school_class, user_id)
+    await school_class.save()
+
+    student.class_id = None
+    student.class_group = None
+    await student.save(update_fields=["class_id", "class_group"])
 
 
 async def assign_teacher(school_class: SchoolClass, teacher_id: int) -> SchoolClass:

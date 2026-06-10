@@ -18,6 +18,7 @@ class SchoolClass(models.Model):
 
     class Meta:
         table = "classes"
+        unique_together = (("parallel", "litera", "corpus"),)
 
     @property
     def display_name(self) -> str:

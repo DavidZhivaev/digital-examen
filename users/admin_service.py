@@ -14,7 +14,7 @@ def validate_admin_can_manage(actor: User, target: User) -> None:
 
 
 def validate_assignable_role(actor: User, role: int) -> None:
-    if role > actor.role:
+    if role >= actor.role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нельзя назначить роль выше своей",
