@@ -5,11 +5,13 @@ from fastapi import APIRouter, HTTPException, Request, status
 from jwt.exceptions import InvalidTokenError
 
 from auth.models import Session
+from auth.password_service import consume_password_token
 from auth.schemas import (
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
     SessionResponse,
+    SetPasswordRequest,
     TokenResponse,
 )
 from auth.session_service import (
@@ -24,6 +26,7 @@ from core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     hash_token,
     verify_password,
     verify_token_hash,
@@ -83,6 +86,13 @@ async def login(body: LoginRequest, request: Request):
         await asyncio.sleep(_LOGIN_FAIL_DELAY_SECONDS)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный логин или пароль")
 
+    if user.must_set_password:
+        await asyncio.sleep(_LOGIN_FAIL_DELAY_SECONDS)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Необходимо установить пароль по ссылке из письма",
+        )
+
     session = await Session.create(
         user=user,
         refresh_token_hash="",
@@ -140,6 +150,19 @@ async def refresh(body: RefreshRequest):
     return TokenResponse(access_token=access_token, refresh_token=new_refresh)
 
 
+@router.post("/set-password")
+async def set_password(body: SetPasswordRequest):
+    if len(body.password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пароль слишком короткий")
+
+    user = await consume_password_token(body.token)
+    user.password_hash = hash_password(body.password)
+    user.must_set_password = False
+    await user.save(update_fields=["password_hash", "must_set_password"])
+    await revoke_all_user_sessions(user.id)
+    return {"detail": "Пароль успешно установлен"}
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(body: LogoutRequest):
     try:
@@ -189,8 +212,17 @@ async def logout_all(current_user: User):
     return None
 
 
+@router.get("/sessions/user/{user_id}", response_model=list[SessionResponse])
+@min_perms(settings.OPERATOR_ROLE)
+async def list_user_sessions(user_id: int, current_user: User):
+    if not await User.exists(id=user_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    sessions = await Session.filter(user_id=user_id).order_by("-created_at")
+    return [_session_to_response(s) for s in sessions]
+
+
 @router.delete("/sessions/user/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.OPERATOR_ROLE)
 async def revoke_user_sessions(user_id: int, current_user: User):
     if not await User.exists(id=user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")

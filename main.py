@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from analytics.routers import router as analytics_router
+from classes.routers import router as classes_router
 from auth.routers import router as auth_router
 from core.config import settings
 from core.database import init_db
@@ -43,6 +44,7 @@ app.add_middleware(RateLimitMiddleware)
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/users", tags=["users"])
+app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
 

@@ -12,7 +12,14 @@
 Authorization: Bearer <access_token>
 ```
 
-Роли: чем выше число `role`, тем больше прав. Администратор — `role >= ADMIN_ROLE` (по умолчанию `4`).
+Роли:
+
+| role | Название |
+|------|----------|
+| 1 | Учащийся |
+| 2 | Учитель (классный руководитель — если прикреплён к классу как `teacher`) |
+| 3 | Оператор (технический специалист) |
+| 4 | Администратор |
 
 ---
 
@@ -32,10 +39,12 @@ Authorization: Bearer <access_token>
 | `POST` | `/api/auth/login` | Публичный | Вход. Возвращает `access_token` и `refresh_token` |
 | `POST` | `/api/auth/refresh` | Публичный | Обновление пары токенов по `refresh_token` |
 | `POST` | `/api/auth/logout` | Публичный | Выход (отзыв сессии по `refresh_token`) |
+| `POST` | `/api/auth/set-password` | Публичный | Установка/смена пароля по ссылке из письма |
 | `GET` | `/api/auth/sessions` | `@min_perms(1)` | Список своих сессий |
 | `DELETE` | `/api/auth/sessions/{session_id}` | `@min_perms(1)` | Отозвать свою сессию |
 | `POST` | `/api/auth/logout-all` | `@min_perms(1)` | Отозвать все свои сессии |
-| `DELETE` | `/api/auth/sessions/user/{user_id}` | Админ | Отозвать все сессии пользователя |
+| `GET` | `/api/auth/sessions/user/{user_id}` | Оператор+ | Список сессий пользователя |
+| `DELETE` | `/api/auth/sessions/user/{user_id}` | Оператор+ | Отозвать все сессии пользователя |
 
 ### `POST /api/auth/login`
 
@@ -69,6 +78,7 @@ Authorization: Bearer <access_token>
 | `POST` | `/api/users/` | Админ | Создать пользователя |
 | `PATCH` | `/api/users/{user_id}` | Админ | Обновить пользователя |
 | `PATCH` | `/api/users/{user_id}/role` | Админ | Изменить права (роль) пользователя |
+| `POST` | `/api/users/{user_id}/force-password-reset` | Оператор+ | Отправить ссылку на смену пароля (вход заблокирован) |
 | `DELETE` | `/api/users/{user_id}` | Админ | Удалить пользователя |
 
 ### Пагинация — `GET /api/users/`
@@ -112,11 +122,34 @@ Query-параметры:
 
 ---
 
+## Classes — `/api/classes`
+
+| Метод | Путь | Доступ | Описание |
+|-------|------|--------|----------|
+| `GET` | `/api/classes/health` | Публичный | Статус сервиса классов |
+| `GET` | `/api/classes/` | Учитель+ | Список классов (классный рук. — только свои, оператор — все) |
+| `GET` | `/api/classes/{id}` | Классный рук. / Оператор+ | Класс по ID |
+| `POST` | `/api/classes/` | Оператор+ | Создать класс |
+| `PATCH` | `/api/classes/{id}` | Классный рук. / Оператор+ | Изменить параллель, литеру, корпус |
+| `PATCH` | `/api/classes/{id}/teacher` | Оператор+ | Назначить классного руководителя (только роль «Учитель») |
+| `POST` | `/api/classes/{id}/students/invite` | Классный рук. / Оператор+ | Пригласить ученика **в этот класс** |
+| `POST` | `/api/classes/{id}/students` | Классный рук. / Оператор+ | Добавить существующего ученика в группу |
+| `PATCH` | `/api/classes/{id}/students/{user_id}/group` | Классный рук. / Оператор+ | Переместить между 1 и 2 группой |
+| `POST` | `/api/classes/{id}/students/{user_id}/transfer` | Классный рук. / Оператор+ | Перевести в другой класс (по умолчанию в 1 группу) |
+
+**Классный руководитель** — пользователь с ролью `2` (Учитель), назначенный полем `teacher` у класса. Обычный учитель без класса не может приглашать и управлять контингентом.
+
+---
+
 ## Mail — `/api/mail`
+
+Gmail: укажите в `.env` переменные `GMAIL_ENABLED=true`, `GMAIL_EMAIL`, `GMAIL_APP_PASSWORD` ([App Password](https://myaccount.google.com/apppasswords)).
 
 | Метод | Путь | Доступ | Описание |
 |-------|------|--------|----------|
 | `GET` | `/api/mail/health` | Публичный | Статус почтового сервиса |
+| `POST` | `/api/mail/send` | Оператор+ | Отправить письмо |
+| `GET` | `/api/mail/unread` | Оператор+ | Непрочитанные входящие письма |
 
 ---
 

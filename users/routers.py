@@ -4,7 +4,9 @@ import math
 from fastapi import APIRouter, HTTPException, Query, status
 from tortoise.exceptions import IntegrityError
 
+from auth.password_service import build_password_link, mark_user_must_set_password
 from auth.session_service import revoke_all_user_sessions
+from mail.gmail_service import send_password_email
 from core.config import settings
 from core.permissions import min_perms
 from core.security import hash_password
@@ -36,6 +38,8 @@ def _user_to_response(user: User) -> UserResponse:
         role=user.role,
         register_at=user.register_at,
         class_id=user.class_id,
+        class_group=user.class_group,
+        must_set_password=user.must_set_password,
         first_name=user.first_name,
         last_name=user.last_name,
         middle_name=user.middle_name,
@@ -183,6 +187,33 @@ async def update_user(user_id: int, body: UserUpdate, current_user: User):
         await revoke_all_user_sessions(user.id)
 
     return _user_to_response(user)
+
+
+@router.post("/{user_id}/force-password-reset")
+@min_perms(settings.OPERATOR_ROLE)
+async def force_password_reset(user_id: int, current_user: User):
+    user = await User.get_or_none(id=user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    raw_token = await mark_user_must_set_password(user)
+    await revoke_all_user_sessions(user.id)
+
+    link = build_password_link(raw_token)
+    try:
+        await send_password_email(
+            to=user.email,
+            subject="Смена пароля — Школа 1580",
+            greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
+            link=link,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Не удалось отправить письмо: {exc}",
+        )
+
+    return {"detail": "Ссылка на смену пароля отправлена", "email": user.email}
 
 
 @router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)

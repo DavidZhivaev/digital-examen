@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from core.roles import ROLE_ADMIN, ROLE_OPERATOR, ROLE_STUDENT, ROLE_TEACHER
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -10,6 +12,7 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "Школа 1580"
     DEBUG: bool = True
+    FRONTEND_URL: str = "http://localhost:3000"
 
     DB_URL: str = "sqlite://db.sqlite3"
 
@@ -20,6 +23,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     MAX_SESSIONS_PER_USER: int = 5
+    PASSWORD_TOKEN_EXPIRE_HOURS: int = 72
 
     PRIVATE_KEY_PATH: str = "keys/private.pem"
     PUBLIC_KEY_PATH: str = "keys/public.pem"
@@ -27,10 +31,8 @@ class Settings(BaseSettings):
     BCRYPT_ROUNDS: int = 12
 
     RATE_LIMIT_ENABLED: bool = True
-    # Лимит по IP (вся школа может сидеть за одним NAT)
     RATE_LIMIT_IP_MAX_REQUESTS: int = 10_000
     RATE_LIMIT_IP_WINDOW_SECONDS: int = 60
-    # Лимит по авторизованному пользователю
     RATE_LIMIT_USER_MAX_REQUESTS: int = 3_000
     RATE_LIMIT_USER_WINDOW_SECONDS: int = 60
 
@@ -42,8 +44,20 @@ class Settings(BaseSettings):
 
     API_PORT: int = 8000
 
-    # role >= ADMIN_ROLE — администратор
-    ADMIN_ROLE: int = 4
+    STUDENT_ROLE: int = ROLE_STUDENT
+    TEACHER_ROLE: int = ROLE_TEACHER
+    OPERATOR_ROLE: int = ROLE_OPERATOR
+    ADMIN_ROLE: int = ROLE_ADMIN
+
+    # Gmail — вставьте данные авторизации
+    GMAIL_ENABLED: bool = False
+    GMAIL_EMAIL: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+    GMAIL_SMTP_HOST: str = "smtp.gmail.com"
+    GMAIL_SMTP_PORT: int = 587
+    GMAIL_IMAP_HOST: str = "imap.gmail.com"
+    GMAIL_IMAP_PORT: int = 993
+    GMAIL_FROM_NAME: str = "Школа 1580"
 
 
 settings = Settings()

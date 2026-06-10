@@ -81,6 +81,8 @@ class UserResponse(BaseModel):
     role: int
     register_at: datetime
     class_id: int | None = Field(None, alias="class")
+    class_group: int | None = None
+    must_set_password: bool = False
     first_name: str
     last_name: str
     middle_name: str | None

@@ -12,11 +12,13 @@ class User(models.Model):
     role = fields.IntField(default=1)
     register_at = fields.DatetimeField(auto_now_add=True)
     class_id = fields.IntField(null=True, source_field="class")
+    class_group = fields.IntField(null=True)
     first_name = fields.CharField(max_length=255)
     last_name = fields.CharField(max_length=255)
     middle_name = fields.CharField(max_length=255, null=True)
     sex = fields.IntField(null=True)
     email_accept = fields.BooleanField(default=False)
+    must_set_password = fields.BooleanField(default=False)
     last_do = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

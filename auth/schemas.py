@@ -23,6 +23,11 @@ class LogoutRequest(BaseModel):
     refresh_token: str
 
 
+class SetPasswordRequest(BaseModel):
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+
+
 class SessionResponse(BaseModel):
     id: int
     device_name: str | None
