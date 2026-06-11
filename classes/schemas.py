@@ -1,4 +1,5 @@
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
+from typing import List
 
 
 class ClassCreate(BaseModel):
@@ -24,7 +25,14 @@ class StudentInviteRequest(BaseModel):
     last_name: str = Field(min_length=1, max_length=255)
     middle_name: str | None = Field(None, max_length=255)
     sex: int | None = Field(None, ge=1, le=2)
-    group: int = Field(default=1, ge=1, le=2)
+    group: int = Field(ge=1, le=2)
+
+    @field_validator("group")
+    @classmethod
+    def validate_group(cls, v):
+        if v not in (1, 2):
+            raise ValueError("group must be 1 or 2")
+        return v
 
 
 class MoveGroupRequest(BaseModel):
@@ -33,12 +41,42 @@ class MoveGroupRequest(BaseModel):
 
 class TransferStudentRequest(BaseModel):
     target_class_id: int
-    group: int = Field(default=1, ge=1, le=2)
+    group: int = Field(ge=1, le=2)
 
 
 class AddExistingStudentRequest(BaseModel):
     user_id: int
-    group: int = Field(default=1, ge=1, le=2)
+    group: int = Field(ge=1, le=2)
+
+
+class ClassImportRow(BaseModel):
+    email: EmailStr
+    first_name: str
+    last_name: str
+    group: int = Field(ge=1, le=2)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def not_empty(cls, v: str):
+        if not v.strip():
+            raise ValueError("empty value")
+        return v.strip()
+
+
+class ClassImportRequest(BaseModel):
+    rows: List[ClassImportRow]
+
+    @field_validator("rows")
+    @classmethod
+    def no_duplicates(cls, rows):
+        emails = [r.email for r in rows]
+        if len(emails) != len(set(emails)):
+            raise ValueError("Duplicate emails in file")
+        return rows
+
+
+class ClassExportFilter(BaseModel):
+    group: int | None = Field(None, ge=1, le=2)
 
 
 class ClassResponse(BaseModel):
