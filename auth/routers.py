@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timezone
+import time
 
 from fastapi import APIRouter, HTTPException, Request, status
 from jwt.exceptions import InvalidTokenError
@@ -38,7 +39,7 @@ from users.models import User
 
 router = APIRouter()
 
-_LOGIN_FAIL_DELAY_SECONDS = 0.5
+_LOGIN_FAIL_DELAY_SECONDS = 2.0
 
 
 def _utcnow() -> datetime:
@@ -82,18 +83,35 @@ async def health():
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request):
+    start_time = time.get_counter() if hasattr(time, 'get_counter') else time.time()
+    
     check_login_rate_limit(request)
 
     user = await User.get_or_none(login=body.login)
+    
+    is_valid = True
+    
     if user is None or not verify_password(body.password, user.password_hash):
-        await asyncio.sleep(_LOGIN_FAIL_DELAY_SECONDS)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Неверный логин или пароль")
+        is_valid = False
 
-    if user.must_set_password:
-        await asyncio.sleep(_LOGIN_FAIL_DELAY_SECONDS)
+    if is_valid and user.must_set_password:
+        elapsed = time.time() - start_time
+        remaining = _LOGIN_FAIL_DELAY_SECONDS - elapsed
+        if remaining > 0:
+            await asyncio.sleep(remaining)
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Необходимо установить пароль по ссылке из письма",
+        )
+
+    if not is_valid:
+        elapsed = time.time() - start_time
+        remaining = _LOGIN_FAIL_DELAY_SECONDS - elapsed
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, 
+            detail="Неверный логин или пароль"
         )
 
     session = await Session.create(
