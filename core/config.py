@@ -49,7 +49,6 @@ class Settings(BaseSettings):
     OPERATOR_ROLE: int = ROLE_OPERATOR
     ADMIN_ROLE: int = ROLE_ADMIN
 
-    # Gmail — вставьте данные авторизации
     GMAIL_ENABLED: bool = False
     GMAIL_EMAIL: str = ""
     GMAIL_APP_PASSWORD: str = ""

@@ -9,8 +9,6 @@ from users.models import User
 
 
 def min_perms(min_role: int) -> Callable:
-    """Декоратор: доступ только при role >= min_role."""
-
     async def checker(user: User = Depends(get_current_user)) -> User:
         if user.role < min_role:
             raise HTTPException(
