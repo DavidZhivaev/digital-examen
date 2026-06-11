@@ -9,9 +9,7 @@
 
 
 ```
-
 Authorization: Bearer <access_token>
-
 ```
 
 Роли:
@@ -245,9 +243,6 @@ Docker:
 ```bash
 docker compose up -d --build
 docker compose exec api python -m scripts.create_admin
-
 ```
 
 Документация Swagger (доступна только при установленном `DEBUG=true`): `http://localhost:8000/docs`
-
-```
