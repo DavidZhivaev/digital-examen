@@ -1,7 +1,7 @@
 from datetime import datetime
 import re
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 _PASSWORD_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
 
@@ -20,15 +20,23 @@ class UserBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
-class UserCreate(UserBase):
-    password: str = Field(min_length=8, max_length=128)
+class UserCreate(BaseModel):
+    email: EmailStr
+    role: int = Field(default=1, ge=1)
+    class_id: int | None = Field(None, alias="class")
+    first_name: str = Field(min_length=1, max_length=255)
+    last_name: str = Field(min_length=1, max_length=255)
+    middle_name: str | None = Field(None, max_length=255)
+    sex: int | None = Field(None, ge=1, le=2)
+    email_accept: bool = False
 
-    @field_validator("password")
-    @classmethod
-    def validate_password_strength(cls, value: str) -> str:
-        if not _PASSWORD_RE.match(value):
-            raise ValueError("Пароль должен быть не короче 8 символов и содержать буквы и цифры")
-        return value
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def validate_student_class(self) -> "UserCreate":
+        if self.role == 1 and not self.class_id:
+            raise ValueError("Для роли 'Ученик' обязательно указать класс (class_id)")
+        return self
 
 
 class UserUpdate(BaseModel):

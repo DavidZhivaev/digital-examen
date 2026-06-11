@@ -37,7 +37,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuthRequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if settings.DEBUG else [],
+    allow_origins=[settings.FRONTEND_URL] if not settings.DEBUG else ["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

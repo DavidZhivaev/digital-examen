@@ -57,3 +57,7 @@ Desktop.ini
 # Логи
 *.log
 logs/
+
+# Еще файлы
+gen.py
+gen.txt

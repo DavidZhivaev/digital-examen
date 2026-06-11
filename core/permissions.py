@@ -35,7 +35,6 @@ def min_perms(min_role: int) -> Callable:
 
         @functools.wraps(endpoint)
         async def wrapper(*args, **kwargs):
-            kwargs.pop("current_user", None)
             bound = endpoint_sig.bind_partial(*args, **kwargs)
             return await endpoint(*bound.args, **bound.kwargs)
 

@@ -7,6 +7,7 @@ from jwt.exceptions import InvalidTokenError
 
 from auth.models import Session
 from auth.password_service import (
+    UNUSABLE_PASSWORD_HASH,
     consume_password_token,
     revoke_user_password_tokens,
 )
@@ -83,15 +84,17 @@ async def health():
 
 @router.post("/login", response_model=TokenResponse)
 async def login(body: LoginRequest, request: Request):
-    start_time = time.get_counter() if hasattr(time, 'get_counter') else time.time()
+    start_time = time.perf_counter()
     
     check_login_rate_limit(request)
 
     user = await User.get_or_none(login=body.login)
-    
     is_valid = True
-    
-    if user is None or not verify_password(body.password, user.password_hash):
+
+    if user is None:
+        is_valid = False
+        verify_password(body.password, UNUSABLE_PASSWORD_HASH)
+    elif not verify_password(body.password, user.password_hash):
         is_valid = False
 
     if is_valid and user.must_set_password:
@@ -173,8 +176,15 @@ async def refresh(body: RefreshRequest):
 
 @router.post("/set-password")
 async def set_password(body: SetPasswordRequest):
-    if len(body.password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Пароль слишком короткий")
+    if (
+        len(body.password) < 8 
+        or not any(c.isalpha() for c in body.password) 
+        or not any(c.isdigit() for c in body.password)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, 
+            detail="Пароль должен быть не короче 8 символов и содержать буквы и цифры"
+        )
 
     user = await consume_password_token(body.token)
     user.password_hash = hash_password(body.password)

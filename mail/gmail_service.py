@@ -33,7 +33,7 @@ def _send_email_sync(*, to: str, subject: str, body: str, html: str | None = Non
     if html:
         message.attach(MIMEText(html, "html", "utf-8"))
 
-    with smtplib.SMTP(settings.GMAIL_SMTP_HOST, settings.GMAIL_SMTP_PORT, timeout=30) as smtp:
+    with smtplib.SMTP(settings.GMAIL_SMTP_HOST, settings.GMAIL_SMTP_PORT, timeout=5) as smtp:
         smtp.ehlo()
         smtp.starttls()
         smtp.login(settings.GMAIL_EMAIL, settings.GMAIL_APP_PASSWORD)

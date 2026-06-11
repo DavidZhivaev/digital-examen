@@ -5,6 +5,8 @@ import io
 from openpyxl import Workbook, load_workbook
 
 from classes.models import SchoolClass
+from fastapi import Query
+from users.routers import transliterate
 from tortoise.transactions import in_transaction
 from classes.service import (
     add_student_to_class,
@@ -127,9 +129,19 @@ async def update_class(class_id: int, body: ClassUpdate, current_user: User):
 
 @router.delete("/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(settings.OPERATOR_ROLE)
-async def delete_class_endpoint(class_id: int, current_user: User):
+async def delete_class_endpoint(
+    class_id: int, 
+    current_user: User, 
+    delete_students: bool = Query(False, description="Удалить ли всех учащихся из этого класса?")
+):
     school_class = await get_class_or_404(class_id)
-    await delete_class(school_class)
+    
+    async with in_transaction():
+        if delete_students:
+            await User.filter(class_id=class_id).delete()
+            
+        await delete_class(school_class)
+        
     return None
 
 
@@ -383,17 +395,43 @@ async def import_class(
             user = await User.get_or_none(email=r.email)
 
             if not user:
+                last_latin = transliterate(r.last_name).capitalize()
+                first_initial = transliterate(r.first_name[0]).upper() if r.first_name else ""
+                
+                base_login = f"{last_latin}{first_initial}"
+                generated_login = base_login
+                
+                counter = 2
+                while await User.exists(login=generated_login):
+                    generated_login = f"{base_login}{counter}"
+                    counter += 1
+
                 user = await User.create(
                     email=r.email,
-                    login=r.email.split("@")[0],
+                    login=generated_login,
                     first_name=r.first_name,
                     last_name=r.last_name,
                     role=1,
                     class_id=school_class.id,
                     class_group=r.group,
-                    password_hash="UNSET",
+                    password_hash="UNSET_PASSWORD_CHOSEN_BY_EMAIL",
                     must_set_password=True,
                 )
+                
+                from auth.password_service import build_password_link, mark_user_must_set_password
+                from mail.gmail_service import send_password_email
+
+                raw_token = await mark_user_must_set_password(user)
+                link = build_password_link(raw_token)
+                try:
+                    await send_password_email(
+                        to=user.email,
+                        subject="Активация аккаунта",
+                        greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
+                        link=link,
+                    )
+                except Exception:
+                    pass
 
             await add_student_to_class(
                 actor=current_user,

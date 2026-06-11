@@ -14,6 +14,7 @@ from core.security import hash_password
 from users.admin_service import validate_admin_can_manage, validate_assignable_role
 from users.models import User
 from users.role_service import validate_role_change
+from core.roles import ROLE_TEACHER, ROLE_STUDENT
 from users.schemas import (
     PaginatedUsersResponse,
     RoleUpdate,
@@ -25,6 +26,19 @@ from users.schemas import (
 
 router = APIRouter()
 
+CYRILLIC_TO_LATIN = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya',
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh',
+    'З': 'Z', 'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O',
+    'П': 'P', 'Р': 'R', 'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts',
+    'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch', 'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya'
+}
+
+def transliterate(text: str) -> str:
+    return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -113,24 +127,66 @@ async def get_user(person_id: UUID, current_user: User):
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(ROLE_TEACHER)
 async def create_user(body: UserCreate, current_user: User):
-    validate_assignable_role(current_user, body.role)
+    if current_user.role == ROLE_TEACHER:
+        if body.role != ROLE_STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Учитель может создавать пользователей только с ролью 'Ученик'"
+            )
+        from classes.models import SchoolClass
+        school_class = await SchoolClass.get_or_none(id=body.class_id)
+        if not school_class or school_class.teacher_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Вы можете создавать учеников только для своего класса"
+            )
+    else:
+        validate_assignable_role(current_user, body.role)
+
+    last_latin = transliterate(body.last_name).capitalize()
+    first_initial = transliterate(body.first_name[0]).upper() if body.first_name else ""
+    middle_initial = transliterate(body.middle_name[0]).upper() if body.middle_name else ""
+    
+    base_login = f"{last_latin}{first_initial}{middle_initial}"
+    generated_login = base_login
+    
+    counter = 2
+    while await User.exists(login=generated_login):
+        generated_login = f"{base_login}{counter}"
+        counter += 1
 
     data = body.model_dump()
-    password = data.pop("password")
-    data["password_hash"] = hash_password(password)
+    data["login"] = generated_login
+    data["password_hash"] = "UNSET_PASSWORD_CHOSEN_BY_EMAIL"
+    data["must_set_password"] = True
 
     try:
         user = await User.create(**data)
     except IntegrityError:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Пользователь с таким email или логином уже существует",
+            detail="Пользователь с таким email уже существует",
+        )
+
+    raw_token = await mark_user_must_set_password(user)
+    link = build_password_link(raw_token)
+    
+    try:
+        await send_password_email(
+            to=user.email,
+            subject="Активация аккаунта и установка пароля",
+            greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
+            link=link,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_201_CREATED,
+            detail=f"Пользователь создан (Логин: {user.login}), но не удалось отправить письмо: {exc}",
         )
 
     return _user_to_response(user)
-
 
 @router.patch("/{person_id}/role", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
