@@ -39,7 +39,6 @@ async def get_active_session(session_id: int, user_id: int) -> Session | None:
 
 
 async def handle_refresh_token_mismatch(session: Session, refresh_token: str) -> None:
-    """При повторном использовании старого refresh-токена отзываем все сессии."""
     if session.revoked_at is not None:
         return
     if verify_token_hash(refresh_token, session.refresh_token_hash):
