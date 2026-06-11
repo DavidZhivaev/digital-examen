@@ -11,9 +11,6 @@ logger = logging.getLogger("api.requests")
 
 
 def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"
@@ -72,6 +69,9 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
         if not request.url.path.startswith("/docs") and not request.url.path.startswith("/openapi"):
             response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
         return response

@@ -4,9 +4,20 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LoginRequest(BaseModel):
-    login: str
-    password: str
-    device_name: str | None = None
+    login: str = Field(
+        min_length=1,
+        max_length=255,
+    )
+
+    password: str = Field(
+        min_length=1,
+        max_length=128,
+    )
+
+    device_name: str | None = Field(
+        default=None,
+        max_length=255,
+    )
 
 
 class TokenResponse(BaseModel):
@@ -16,11 +27,17 @@ class TokenResponse(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(
+        min_length=1,
+        max_length=4096,
+    )
 
 
 class LogoutRequest(BaseModel):
-    refresh_token: str
+    refresh_token: str = Field(
+        min_length=1,
+        max_length=4096,
+    )
 
 
 class SetPasswordRequest(BaseModel):

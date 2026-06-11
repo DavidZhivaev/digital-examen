@@ -5,7 +5,10 @@ from fastapi import APIRouter, HTTPException, Request, status
 from jwt.exceptions import InvalidTokenError
 
 from auth.models import Session
-from auth.password_service import consume_password_token
+from auth.password_service import (
+    consume_password_token,
+    revoke_user_password_tokens,
+)
 from auth.schemas import (
     LoginRequest,
     LogoutRequest,
@@ -159,6 +162,7 @@ async def set_password(body: SetPasswordRequest):
     user.password_hash = hash_password(body.password)
     user.must_set_password = False
     await user.save(update_fields=["password_hash", "must_set_password"])
+    await revoke_user_password_tokens(user.id)
     await revoke_all_user_sessions(user.id)
     return {"detail": "Пароль успешно установлен"}
 

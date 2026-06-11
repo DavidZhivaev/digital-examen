@@ -65,10 +65,7 @@ _login_limiter = SlidingWindowLimiter(
 )
 
 
-def client_ip(request: Request | StarletteRequest) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+def client_ip(request):
     if request.client:
         return request.client.host
     return "unknown"

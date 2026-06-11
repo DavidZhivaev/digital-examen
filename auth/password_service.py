@@ -57,3 +57,11 @@ async def mark_user_must_set_password(user: User) -> str:
     user.password_hash = UNUSABLE_PASSWORD_HASH
     await user.save(update_fields=["must_set_password", "password_hash"])
     return await create_password_token(user, purpose="reset")
+
+async def revoke_user_password_tokens(user_id: int):
+    await PasswordToken.filter(
+        user_id=user_id,
+        used_at__isnull=True,
+    ).update(
+        used_at=_utcnow()
+    )

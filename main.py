@@ -13,6 +13,7 @@ from core.middleware import AuthRequestLoggingMiddleware, SecurityHeadersMiddlew
 from core.rate_limit import RateLimitMiddleware
 from mail.routers import router as mail_router
 from users.routers import router as users_router
+from rooms.routers import router as rooms_router
 
 setup_logging()
 
@@ -47,6 +48,7 @@ app.include_router(users_router, prefix="/api/users", tags=["users"])
 app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
+app.include_router(rooms_router, prefix="/api/classrooms", tags=["classrooms"])
 
 init_db(app)
 

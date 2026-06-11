@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import math
+from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Query, status
 from tortoise.exceptions import IntegrityError
@@ -100,12 +101,12 @@ async def list_users(
     )
 
 
-@router.get("/{user_id}", response_model=UserResponse)
+@router.get("/{person_id}", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
-async def get_user(user_id: int, current_user: User):
-    user = await User.get_or_none(id=user_id)
+async def get_user(person_id: UUID, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
 
     validate_admin_can_manage(current_user, user)
     return _user_to_response(user)
@@ -131,10 +132,10 @@ async def create_user(body: UserCreate, current_user: User):
     return _user_to_response(user)
 
 
-@router.patch("/{user_id}/role", response_model=UserResponse)
+@router.patch("/{person_id}/role", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
-async def update_user_role(user_id: int, body: RoleUpdate, current_user: User):
-    user = await User.get_or_none(id=user_id)
+async def update_user_role(person_id: UUID, body: RoleUpdate, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
@@ -149,10 +150,10 @@ async def update_user_role(user_id: int, body: RoleUpdate, current_user: User):
     return _user_to_response(user)
 
 
-@router.patch("/{user_id}", response_model=UserResponse)
+@router.patch("/{person_id}", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
-async def update_user(user_id: int, body: UserUpdate, current_user: User):
-    user = await User.get_or_none(id=user_id)
+async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
@@ -189,10 +190,10 @@ async def update_user(user_id: int, body: UserUpdate, current_user: User):
     return _user_to_response(user)
 
 
-@router.post("/{user_id}/force-password-reset")
+@router.post("/{person_id}/force-password-reset")
 @min_perms(settings.OPERATOR_ROLE)
-async def force_password_reset(user_id: int, current_user: User):
-    user = await User.get_or_none(id=user_id)
+async def force_password_reset(person_id: UUID, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
@@ -203,7 +204,7 @@ async def force_password_reset(user_id: int, current_user: User):
     try:
         await send_password_email(
             to=user.email,
-            subject="Смена пароля — Школа 1580",
+            subject="Смена пароля",
             greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
             link=link,
         )
@@ -216,16 +217,20 @@ async def force_password_reset(user_id: int, current_user: User):
     return {"detail": "Ссылка на смену пароля отправлена", "email": user.email}
 
 
-@router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(settings.ADMIN_ROLE)
-async def delete_user(user_id: int, current_user: User):
-    if user_id == current_user.id:
+async def delete_user(person_id: UUID, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    
+    if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Нельзя удалить собственную учётную запись",
         )
 
-    user = await User.get_or_none(id=user_id)
+    user = await User.get_or_none(id=user.id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 

@@ -14,26 +14,20 @@ def _ensure_keys() -> tuple[str, str]:
     private_path = Path(settings.PRIVATE_KEY_PATH)
     public_path = Path(settings.PUBLIC_KEY_PATH)
 
-    if private_path.exists() and public_path.exists():
-        return private_path.read_text(), public_path.read_text()
+    if not private_path.exists():
+        raise RuntimeError(
+            f"Private key not found: {private_path}"
+        )
 
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import rsa
+    if not public_path.exists():
+        raise RuntimeError(
+            f"Public key not found: {public_path}"
+        )
 
-    private_path.parent.mkdir(parents=True, exist_ok=True)
-    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    private_pem = key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+    return (
+        private_path.read_text(),
+        public_path.read_text(),
     )
-    public_pem = key.public_key().public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-    private_path.write_bytes(private_pem)
-    public_path.write_bytes(public_pem)
-    return private_pem.decode(), public_pem.decode()
 
 
 _private_key, _public_key = _ensure_keys()
