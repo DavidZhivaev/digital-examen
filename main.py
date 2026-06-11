@@ -14,6 +14,7 @@ from core.rate_limit import RateLimitMiddleware
 from mail.routers import router as mail_router
 from users.routers import router as users_router
 from rooms.routers import router as rooms_router
+from seating.routers import router as seating_router
 
 setup_logging()
 
@@ -49,6 +50,7 @@ app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
 app.include_router(rooms_router, prefix="/api/classrooms", tags=["classrooms"])
+app.include_router(seating_router, prefix="/api/seating", tags=["seating"])
 
 init_db(app)
 
