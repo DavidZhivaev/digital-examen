@@ -1,5 +1,3 @@
-"""Создание первого администратора. Запуск: python -m scripts.create_admin"""
-
 import asyncio
 
 from tortoise import Tortoise

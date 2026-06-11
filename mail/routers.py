@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, status
 
 from core.config import settings
 from core.permissions import min_perms
-from mail.gmail_service import fetch_unread_emails, send_email
-from mail.schemas import SendEmailRequest, UnreadEmailResponse
+from mail.gmail_service import send_email
+from mail.schemas import SendEmailRequest
 
 router = APIRouter()
 
@@ -13,18 +13,17 @@ async def health():
     return {
         "service": "mail",
         "status": "ok",
-        "gmail_configured": settings.GMAIL_ENABLED and bool(settings.GMAIL_EMAIL),
+        "enabled": settings.GMAIL_ENABLED,
     }
 
 
-@router.post("/send", status_code=204)
+@router.post("/send", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(settings.OPERATOR_ROLE)
 async def send_mail(body: SendEmailRequest):
-    await send_email(to=body.to, subject=body.subject, body=body.body, html=body.html)
-
-
-@router.get("/unread", response_model=list[UnreadEmailResponse])
-@min_perms(settings.OPERATOR_ROLE)
-async def get_unread(limit: int = Query(50, ge=1, le=200)):
-    emails = await fetch_unread_emails(limit=limit)
-    return [UnreadEmailResponse.model_validate(item) for item in emails]
+    await send_email(
+        to=body.to,
+        subject=body.subject,
+        body=body.message,
+        html=body.html,
+    )
+    return None
