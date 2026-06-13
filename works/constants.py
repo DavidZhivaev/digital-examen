@@ -1,0 +1,11 @@
+SUBJECT_MATH = "math"
+SUBJECT_PHYSICS = "physics"
+SUBJECT_RUSSIAN = "russian"
+
+SUBJECTS = {SUBJECT_MATH, SUBJECT_PHYSICS, SUBJECT_RUSSIAN}
+
+SUBJECT_LABELS = {
+    SUBJECT_MATH: "Математика",
+    SUBJECT_PHYSICS: "Физика",
+    SUBJECT_RUSSIAN: "Русский язык",
+}

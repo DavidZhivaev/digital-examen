@@ -58,5 +58,7 @@ class Settings(BaseSettings):
     GMAIL_IMAP_PORT: int = 993
     GMAIL_FROM_NAME: str = "Школа 1580"
 
+    WORK_TYPES_PATH: str = "works/work_types.json"
+
 
 settings = Settings()
