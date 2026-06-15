@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from analytics.routers import router as analytics_router
 from classes.routers import router as classes_router
 from auth.routers import router as auth_router
+from core.audit import AuthAuditMiddleware
 from core.config import settings
 from core.database import init_db
 from core.logging_config import setup_logging
@@ -36,6 +37,7 @@ app = FastAPI(
 
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(AuthRequestLoggingMiddleware)
+app.add_middleware(AuthAuditMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.FRONTEND_URL] if not settings.DEBUG else ["http://localhost:3000"],

@@ -9,7 +9,6 @@ from core.security import decode_token
 
 logger = logging.getLogger("api.requests")
 
-
 def _client_ip(request: Request) -> str:
     if request.client:
         return request.client.host
@@ -45,18 +44,21 @@ class AuthRequestLoggingMiddleware(BaseHTTPMiddleware):
 
         if auth_context is not None:
             duration_ms = round((time.perf_counter() - start) * 1000, 2)
-            logger.info(
-                "user_id=%s person_id=%s role=%s session_id=%s %s %s status=%s duration_ms=%s ip=%s",
-                auth_context["user_id"],
-                auth_context["person_id"],
-                auth_context["role"],
-                auth_context["session_id"],
-                request.method,
-                request.url.path,
-                response.status_code,
-                duration_ms,
-                _client_ip(request),
-            )
+            logger.info({
+                "event": "request",
+
+                "user_id": auth_context["user_id"],
+                "person_id": auth_context["person_id"],
+                "role": auth_context["role"],
+                "session_id": auth_context["session_id"],
+
+                "http_method": request.method,
+                "http_path": request.url.path,
+                "http_status": response.status_code,
+                "duration_ms": duration_ms,
+
+                "ip": _client_ip(request),
+            })
 
         return response
 
