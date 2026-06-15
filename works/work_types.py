@@ -63,7 +63,7 @@ def get_work_type(type_id: str) -> WorkTypeConfig:
 
 
 def has_test_part(questions: dict[str, str | None]) -> bool:
-    return any(v is not None for v in questions.values())
+    return any(v for v in questions.values())
 
 
 def questions_to_json(questions: dict[str, str | None]) -> str:

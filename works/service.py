@@ -168,7 +168,7 @@ class WorkService:
                 conduct_date=conduct_date,
                 work_type_id=work_type.type_id,
                 work_type_name=work_type.name,
-                questions=questions_to_json(work_type.questions),
+                questions=work_type.questions,
             )
 
             for student in students:
@@ -217,12 +217,12 @@ class WorkService:
                     )
 
         async with in_transaction():
-            for student in new_students:
-                await WorkParticipant.create(work_id=work.id, user_id=student.id)
+            await WorkParticipant.bulk_create([
+                WorkParticipant(work_id=work.id, user_id=student.id)
+                for student in new_students
+            ])
 
-            seating = await WorkSeating.get_or_none(work_id=work.id)
-            if seating:
-                await seating.delete()
+            await WorkSeating.filter(work_id=work.id).delete()
 
         await cls._notify_global_participants(work, new_students)
         return work
@@ -263,11 +263,11 @@ class WorkService:
         include_participants: bool = False,
     ) -> dict:
         participants = await WorkParticipant.filter(work_id=work.id).prefetch_related("user")
+        created_by = await work.created_by
         class_ids = sorted({p.user.class_id for p in participants if p.user.class_id})
         room_ids = await cls.get_room_ids(work)
         supervisor_ids = await cls.get_supervisor_person_ids(work)
-        created_by = await work.created_by
-        questions = questions_from_json(work.questions)
+        questions = work.questions
         global_work = len(class_ids) > 1
 
         result = {
@@ -321,10 +321,11 @@ class WorkService:
             homeroom_class_ids = {c.id for c in homeroom_classes}
 
             if homeroom_class_ids:
-                all_participants = await WorkParticipant.all().prefetch_related("user")
-                for p in all_participants:
-                    if p.user.class_id in homeroom_class_ids:
-                        work_ids.add(p.work_id)
+                all_participants = await WorkParticipant.filter(
+                    user__class_id__in=homeroom_class_ids
+                ).values_list("work_id", flat=True)
+
+                work_ids.update(all_participants)
 
         if not work_ids:
             return []

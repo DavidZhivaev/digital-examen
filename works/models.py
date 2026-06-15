@@ -19,7 +19,7 @@ class Work(models.Model):
     conduct_date = fields.DateField()
     work_type_id = fields.CharField(max_length=64)
     work_type_name = fields.CharField(max_length=255)
-    questions = fields.TextField()
+    questions = fields.JSONField()
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

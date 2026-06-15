@@ -10,7 +10,13 @@ from core.config import settings
 from core.security import decode_token
 
 _HEALTH_SUFFIXES = ("/health",)
-_EXEMPT_PATHS = {"/api/health", "/docs", "/redoc", "/openapi.json"}
+_EXEMPT_PATHS = {
+    "/api/health",
+    "/metrics",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+}
 
 
 class SlidingWindowLimiter:
@@ -81,7 +87,7 @@ def _extract_user_id(request: Request | StarletteRequest) -> str | None:
         return None
     if payload.get("type") != "access":
         return None
-    return payload.get("sub")
+    return str(payload.get("sub"))
 
 
 def _is_exempt(path: str) -> bool:
@@ -110,10 +116,18 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         user_id = _extract_user_id(request)
-        if user_id is not None:
-            allowed, retry_after = _user_limiter.check(f"user:{user_id}")
+
+        ip_key = f"ip:{client_ip(request)}"
+        ip_allowed, ip_retry = _ip_limiter.check(ip_key)
+
+        if user_id:
+            user_allowed, user_retry = _user_limiter.check(f"user:{user_id}")
+
+            allowed = ip_allowed and user_allowed
+            retry_after = max(ip_retry, user_retry)
         else:
-            allowed, retry_after = _ip_limiter.check(f"ip:{client_ip(request)}")
+            allowed = ip_allowed
+            retry_after = ip_retry
 
         if not allowed:
             return JSONResponse(
