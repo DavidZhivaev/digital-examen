@@ -61,3 +61,5 @@ logs/
 # Еще файлы
 gen.py
 gen.txt
+users.txt
+tester.py

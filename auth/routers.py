@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import time
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -40,6 +40,10 @@ from users.models import User
 
 router = APIRouter()
 
+_attempts = {}
+
+MAX_DELAY = 60
+RESET_AFTER = timedelta(minutes=15)
 _LOGIN_FAIL_DELAY_SECONDS = 2.0
 
 
@@ -57,6 +61,28 @@ def _session_to_response(session: Session) -> SessionResponse:
         revoked_at=session.revoked_at,
         active=session.is_active,
     )
+
+
+def register_fail(key: str) -> int:
+    now = datetime.now()
+
+    data = _attempts.get(key)
+
+    if data is None or now - data["last"] > RESET_AFTER:
+        fails = 1
+    else:
+        fails = data["fails"] + 1
+
+    _attempts[key] = {
+        "fails": fails,
+        "last": now,
+    }
+
+    return min(2 ** (fails - 1), MAX_DELAY)
+
+
+def clear_attempts(key: str):
+    _attempts.pop(key, None)
 
 
 async def _get_valid_session(session_id: int, refresh_token: str) -> Session:
@@ -87,6 +113,7 @@ async def login(body: LoginRequest, request: Request):
     start_time = time.perf_counter()
     
     check_login_rate_limit(request)
+    key = f"{request.client.host}:{body.login}"
 
     user = await User.get_or_none(login=body.login)
     is_valid = True
@@ -108,13 +135,17 @@ async def login(body: LoginRequest, request: Request):
         )
 
     if not is_valid:
-        elapsed = time.time() - start_time
-        remaining = _LOGIN_FAIL_DELAY_SECONDS - elapsed
+        delay = register_fail(key)
+
+        elapsed = time.perf_counter() - start_time
+        remaining = delay - elapsed
+
         if remaining > 0:
             await asyncio.sleep(remaining)
+
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Неверный логин или пароль"
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный логин или пароль",
         )
 
     session = await Session.create(
@@ -124,6 +155,7 @@ async def login(body: LoginRequest, request: Request):
         user_agent=request.headers.get("user-agent"),
         expires_at=_utcnow(),
     )
+    clear_attempts(key)
 
     refresh_token, expires_at = create_refresh_token(user_id=user.id, session_id=session.id)
     session.refresh_token_hash = hash_token(refresh_token)

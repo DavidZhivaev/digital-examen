@@ -5,8 +5,8 @@ class RoomCreate(BaseModel):
     corpus: int = Field(ge=1)
     number: int = Field(ge=1)
 
-    rows: int = Field(ge=1)
-    columns: int = Field(ge=1)
+    rows: int = Field(ge=1, le=20)
+    columns: int = Field(ge=1, le=20)
 
     it: bool = False
 

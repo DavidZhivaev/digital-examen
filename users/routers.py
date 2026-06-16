@@ -1,6 +1,8 @@
 from datetime import datetime, timezone
 import math
 from uuid import UUID
+import secrets
+import string
 
 from fastapi import APIRouter, HTTPException, Query, status
 from tortoise.exceptions import IntegrityError
@@ -10,6 +12,7 @@ from auth.session_service import revoke_all_user_sessions
 from mail.gmail_service import send_password_email
 from core.config import settings
 from core.permissions import min_perms
+from classes.models import SchoolClass
 from core.security import hash_password
 from users.admin_service import validate_admin_can_manage, validate_assignable_role
 from users.models import User
@@ -43,6 +46,9 @@ def transliterate(text: str) -> str:
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
+def generate_temp_password(length: int = 10) -> str:
+    alphabet = string.ascii_letters + string.digits
+    return "".join(secrets.choice(alphabet) for _ in range(length))
 
 def _user_to_response(user: User) -> UserResponse:
     return UserResponse(
@@ -159,7 +165,9 @@ async def create_user(body: UserCreate, current_user: User):
 
     data = body.model_dump()
     data["login"] = generated_login
-    data["password_hash"] = "UNSET_PASSWORD_CHOSEN_BY_EMAIL"
+    temp_password = generate_temp_password()
+
+    data["password_hash"] = hash_password(temp_password)
     data["must_set_password"] = True
 
     try:
@@ -174,11 +182,25 @@ async def create_user(body: UserCreate, current_user: User):
     link = build_password_link(raw_token)
     
     try:
+        school_class = await SchoolClass.get_or_none(id=body.class_id)
+
+        class_label = ""
+        if school_class:
+            class_label = f"{school_class.name}{body.class_group}"
+
         await send_password_email(
             to=user.email,
-            subject="Активация аккаунта и установка пароля",
+            subject="Создана новая учетная запись!",
             greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
-            link=link,
+            message=(
+                f"Вам создана учетная запись.\n\n"
+                f"Роль: ученик\n"
+                f"Класс: {body.class_id} {body.class_group}\n\n"
+                f"Логин: {user.login}\n"
+                f"Временный пароль: {temp_password}\n\n"
+                f"После входа система попросит вас сменить пароль."
+            ),
+            link=link
         )
     except Exception as exc:
         raise HTTPException(

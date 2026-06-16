@@ -10,10 +10,12 @@ from classes.models import SchoolClass, StudentClassHistory
 class SeatingService:
     @staticmethod
     def _get_row_letter(row_idx: int) -> str:
+        letters = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
         string = ""
+        base = len(letters)
         while row_idx > 0:
-            row_idx, remainder = divmod(row_idx - 1, 26)
-            string = chr(65 + remainder) + string
+            row_idx, remainder = divmod(row_idx - 1, base)
+            string = letters[remainder] + string
         return string
 
     @staticmethod
