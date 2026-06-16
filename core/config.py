@@ -14,11 +14,11 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     FRONTEND_URL: str = "http://localhost:3000"
 
-    DB_URL: str = "sqlite://db.sqlite3"
+    DB_URL: str = "sqlite://db.sqlite3" # Только для dev версии, дальше надо на пскульку поменять..
 
     ALGORITHM: str = "RS256"
-    JWT_ISSUER: str = "digital-examen"
-    JWT_AUDIENCE: str = "digital-examen-api"
+    JWT_ISSUER: str = "digital-school"
+    JWT_AUDIENCE: str = "digital-school-api"
 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30

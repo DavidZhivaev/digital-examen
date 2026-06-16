@@ -9,7 +9,7 @@ from fastapi import HTTPException, status
 from core.config import settings
 
 
-def _ensure_gmail_configured() -> None:
+def check_gmail_configured() -> None:
     if not settings.GMAIL_ENABLED:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -22,7 +22,7 @@ def _ensure_gmail_configured() -> None:
         )
 
 
-def _send_email_sync(*, to: str, subject: str, body: str, html: str | None = None) -> None:
+def send_email_sync(*, to: str, subject: str, body: str, html: str | None = None) -> None:
     message = MIMEMultipart("alternative")
     message["From"] = formataddr((settings.GMAIL_FROM_NAME, settings.GMAIL_EMAIL))
     message["To"] = to
@@ -41,9 +41,9 @@ def _send_email_sync(*, to: str, subject: str, body: str, html: str | None = Non
 
 
 async def send_email(*, to: str, subject: str, body: str, html: str | None = None) -> None:
-    _ensure_gmail_configured()
+    check_gmail_configured()
     await asyncio.to_thread(
-        _send_email_sync,
+        send_email_sync,
         to=to,
         subject=subject,
         body=body,
@@ -74,7 +74,4 @@ async def send_notification_email(
     message: str,
     html: str | None = None,
 ) -> None:
-    """
-    Универсальные уведомления пользователям (система/класс/события).
-    """
     await send_email(to=to, subject=subject, body=message, html=html)

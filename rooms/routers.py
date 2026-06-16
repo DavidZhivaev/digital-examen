@@ -17,7 +17,7 @@ from rooms.schemas import (
 router = APIRouter()
 
 
-def _room_to_response(room: Room) -> RoomResponse:
+def room_response(room: Room) -> RoomResponse:
     return RoomResponse(
         id=room.id,
         corpus=room.corpus,
@@ -53,7 +53,7 @@ async def list_rooms(
     )
 
     return PaginatedRoomsResponse(
-        items=[_room_to_response(room) for room in rooms],
+        items=[room_response(room) for room in rooms],
         total=total,
         page=page,
         page_size=page_size,
@@ -72,7 +72,7 @@ async def get_room(room_id: int):
             detail="Кабинет не найден",
         )
 
-    return _room_to_response(room)
+    return room_response(room)
 
 
 @router.post(
@@ -90,7 +90,7 @@ async def create_room(body: RoomCreate):
             detail="Такой кабинет уже существует",
         )
 
-    return _room_to_response(room)
+    return room_response(room)
 
 
 @router.patch("/{room_id}", response_model=RoomResponse)
@@ -118,7 +118,7 @@ async def update_room(
             detail="Такой кабинет уже существует",
         )
 
-    return _room_to_response(room)
+    return room_response(room)
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)

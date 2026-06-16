@@ -10,7 +10,7 @@ from jwt.exceptions import InvalidTokenError
 from core.config import settings
 
 
-def _ensure_keys() -> tuple[str, str]:
+def get_keys() -> tuple[str, str]:
     private_path = Path(settings.PRIVATE_KEY_PATH)
     public_path = Path(settings.PUBLIC_KEY_PATH)
 
@@ -30,7 +30,7 @@ def _ensure_keys() -> tuple[str, str]:
     )
 
 
-_private_key, _public_key = _ensure_keys()
+private_key, public_key = get_keys()
 
 
 def hash_password(password: str) -> str:
@@ -55,12 +55,12 @@ def verify_token_hash(token: str, token_hash: str) -> bool:
     return secrets.compare_digest(hash_token(token), token_hash)
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _base_payload() -> dict:
-    now = _utcnow()
+def new_payload() -> dict:
+    now = utcnow()
     return {
         "iss": settings.JWT_ISSUER,
         "aud": settings.JWT_AUDIENCE,
@@ -70,9 +70,9 @@ def _base_payload() -> dict:
 
 
 def create_access_token(*, user_id: int, person_id: str, role: int, session_id: int) -> str:
-    expire = _utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
-        **_base_payload(),
+        **new_payload(),
         "sub": str(user_id),
         "person_id": person_id,
         "role": role,
@@ -80,27 +80,27 @@ def create_access_token(*, user_id: int, person_id: str, role: int, session_id: 
         "type": "access",
         "exp": expire,
     }
-    return jwt.encode(payload, _private_key, algorithm=settings.ALGORITHM)
+    return jwt.encode(payload, private_key, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(*, user_id: int, session_id: int) -> tuple[str, datetime]:
-    expire = _utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    expire = utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
-        **_base_payload(),
+        **new_payload(),
         "sub": str(user_id),
         "sid": session_id,
         "type": "refresh",
         "jti": secrets.token_urlsafe(32),
         "exp": expire,
     }
-    token = jwt.encode(payload, _private_key, algorithm=settings.ALGORITHM)
+    token = jwt.encode(payload, private_key, algorithm=settings.ALGORITHM)
     return token, expire
 
 
 def decode_token(token: str) -> dict:
     return jwt.decode(
         token,
-        _public_key,
+        public_key,
         algorithms=[settings.ALGORITHM],
         audience=settings.JWT_AUDIENCE,
         issuer=settings.JWT_ISSUER,

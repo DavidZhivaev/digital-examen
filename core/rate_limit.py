@@ -9,14 +9,14 @@ from starlette.responses import JSONResponse, Response
 from core.config import settings
 from core.security import decode_token
 
-_HEALTH_SUFFIXES = ("/health",)
-_EXEMPT_PATHS = {
+HEALTH_SUFFIXES = ("/health",)
+EXEMPT_PATHS = {
     "/api/health",
     "/metrics",
     "/docs",
     "/redoc",
     "/openapi.json",
-}
+} # на них решиь не стаивть лимиты, потому что смысла в этом нет
 
 
 class SlidingWindowLimiter:
@@ -42,7 +42,7 @@ class SlidingWindowLimiter:
         bucket.append(now)
         return True, 0
 
-    def _cleanup(self, now: float) -> None:
+    def cleanup(self, now: float) -> None:
         if now - self._last_cleanup < 120:
             return
         self._last_cleanup = now
@@ -57,15 +57,15 @@ class SlidingWindowLimiter:
             del self._buckets[key]
 
 
-_ip_limiter = SlidingWindowLimiter(
+ip_limiter = SlidingWindowLimiter(
     settings.RATE_LIMIT_IP_MAX_REQUESTS,
     settings.RATE_LIMIT_IP_WINDOW_SECONDS,
 )
-_user_limiter = SlidingWindowLimiter(
+user_limiter = SlidingWindowLimiter(
     settings.RATE_LIMIT_USER_MAX_REQUESTS,
     settings.RATE_LIMIT_USER_WINDOW_SECONDS,
 )
-_login_limiter = SlidingWindowLimiter(
+login_limiter = SlidingWindowLimiter(
     settings.LOGIN_RATE_LIMIT_MAX_ATTEMPTS,
     settings.LOGIN_RATE_LIMIT_WINDOW_SECONDS,
 )
@@ -77,7 +77,7 @@ def client_ip(request):
     return "unknown"
 
 
-def _extract_user_id(request: Request | StarletteRequest) -> str | None:
+def extract_user_id(request: Request | StarletteRequest) -> str | None:
     auth = request.headers.get("authorization")
     if not auth or not auth.lower().startswith("bearer "):
         return None
@@ -90,14 +90,14 @@ def _extract_user_id(request: Request | StarletteRequest) -> str | None:
     return str(payload.get("sub"))
 
 
-def _is_exempt(path: str) -> bool:
-    if path in _EXEMPT_PATHS:
+def is_exempt(path: str) -> bool: # простая оьертка, возвращает есть ли эндпоинт в белом списке для рэйт лимита
+    if path in EXEMPT_PATHS:
         return True
-    return any(path.endswith(suffix) for suffix in _HEALTH_SUFFIXES)
+    return any(path.endswith(suffix) for suffix in HEALTH_SUFFIXES)
 
 
 def check_login_rate_limit(request: Request) -> None:
-    allowed, retry_after = _login_limiter.check(f"login:{client_ip(request)}")
+    allowed, retry_after = login_limiter.check(f"login:{client_ip(request)}")
     if not allowed:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -112,16 +112,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         path = request.url.path
-        if _is_exempt(path):
+        if is_exempt(path):
             return await call_next(request)
 
-        user_id = _extract_user_id(request)
+        user_id = extract_user_id(request)
 
         ip_key = f"ip:{client_ip(request)}"
-        ip_allowed, ip_retry = _ip_limiter.check(ip_key)
+        ip_allowed, ip_retry = ip_limiter.check(ip_key)
 
         if user_id:
-            user_allowed, user_retry = _user_limiter.check(f"user:{user_id}")
+            user_allowed, user_retry = user_limiter.check(f"user:{user_id}")
 
             allowed = ip_allowed and user_allowed
             retry_after = max(ip_retry, user_retry)

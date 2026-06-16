@@ -9,13 +9,13 @@ from core.security import decode_token
 
 logger = logging.getLogger("api.requests")
 
-def _client_ip(request: Request) -> str:
+def client_ip(request: Request) -> str:
     if request.client:
         return request.client.host
     return "unknown"
 
 
-def _extract_auth_context(request: Request) -> dict | None:
+def extract_auth_context(request: Request) -> dict | None:
     auth = request.headers.get("authorization")
     if not auth or not auth.lower().startswith("bearer "):
         return None
@@ -39,7 +39,7 @@ def _extract_auth_context(request: Request) -> dict | None:
 class AuthRequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         start = time.perf_counter()
-        auth_context = _extract_auth_context(request)
+        auth_context = extract_auth_context(request)
         response = await call_next(request)
 
         if auth_context is not None:
@@ -57,7 +57,7 @@ class AuthRequestLoggingMiddleware(BaseHTTPMiddleware):
                 "http_status": response.status_code,
                 "duration_ms": duration_ms,
 
-                "ip": _client_ip(request),
+                "ip": client_ip(request),
             })
 
         return response

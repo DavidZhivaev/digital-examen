@@ -7,7 +7,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from core.middleware import _client_ip, _extract_auth_context
+from core.middleware import client_ip, extract_auth_context
 
 logger = logging.getLogger("api.audit")
 
@@ -49,7 +49,7 @@ SUSPICIOUS_PATTERNS = (
 )
 
 
-def _mask_data(data):
+def mask_data(data):
     if isinstance(data, dict):
         result = {}
 
@@ -57,17 +57,17 @@ def _mask_data(data):
             if key.casefold() in SENSITIVE_FIELDS:
                 result[key] = "***"
             else:
-                result[key] = _mask_data(value)
+                result[key] = mask_data(value)
 
         return result
 
     if isinstance(data, list):
-        return [_mask_data(item) for item in data]
+        return [mask_data(item) for item in data]
 
     return data
 
 
-def _is_suspicious(query, body):
+def is_suspicious(query, body):
     try:
         payload = json.dumps(
             {
@@ -93,14 +93,14 @@ class AuthAuditMiddleware(BaseHTTPMiddleware):
         ):
             return await call_next(request)
 
-        auth_context = _extract_auth_context(request)
+        auth_context = extract_auth_context(request)
 
         if auth_context is None:
             return await call_next(request)
 
         start = time.perf_counter()
 
-        query_params = _mask_data(dict(request.query_params))
+        query_params = mask_data(dict(request.query_params))
 
         body = None
         raw = b""
@@ -118,7 +118,7 @@ class AuthAuditMiddleware(BaseHTTPMiddleware):
                                 raw.decode(errors="replace")
                             )
 
-                            body = _mask_data(body)
+                            body = mask_data(body)
 
                         else:
                             body = "<too_large>"
@@ -172,12 +172,12 @@ class AuthAuditMiddleware(BaseHTTPMiddleware):
 
                     "duration_ms": duration_ms,
 
-                    "client_ip": _client_ip(request),
+                    "client_ip": client_ip(request),
                     "user_agent": request.headers.get(
                         "user-agent"
                     ),
 
-                    "suspicious": _is_suspicious(
+                    "suspicious": is_suspicious(
                         query_params,
                         body,
                     ),
