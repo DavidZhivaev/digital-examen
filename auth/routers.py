@@ -40,18 +40,18 @@ from users.models import User
 
 router = APIRouter()
 
-_attempts = {}
+attempts = {}
 
 MAX_DELAY = 60
 RESET_AFTER = timedelta(minutes=15)
-_LOGIN_FAIL_DELAY_SECONDS = 2.0
+LOGIN_FAIL_DELAY_SECONDS = 2.0
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _session_to_response(session: Session) -> SessionResponse:
+def session_response(session: Session) -> SessionResponse:
     return SessionResponse(
         id=session.id,
         device_name=session.device_name,
@@ -66,14 +66,14 @@ def _session_to_response(session: Session) -> SessionResponse:
 def register_fail(key: str) -> int:
     now = datetime.now()
 
-    data = _attempts.get(key)
+    data = attempts.get(key)
 
     if data is None or now - data["last"] > RESET_AFTER:
         fails = 1
     else:
         fails = data["fails"] + 1
 
-    _attempts[key] = {
+    attempts[key] = {
         "fails": fails,
         "last": now,
     }
@@ -82,10 +82,10 @@ def register_fail(key: str) -> int:
 
 
 def clear_attempts(key: str):
-    _attempts.pop(key, None)
+    attempts.pop(key, None)
 
 
-async def _get_valid_session(session_id: int, refresh_token: str) -> Session:
+async def get_valid_session(session_id: int, refresh_token: str) -> Session:
     session = await Session.get_or_none(id=session_id).prefetch_related("user")
     if session is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия не найдена")
@@ -93,7 +93,7 @@ async def _get_valid_session(session_id: int, refresh_token: str) -> Session:
     if session.revoked_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия отозвана")
 
-    if session.expires_at < _utcnow():
+    if session.expires_at < utcnow():
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Сессия истекла")
 
     if not verify_token_hash(refresh_token, session.refresh_token_hash):
@@ -126,7 +126,7 @@ async def login(body: LoginRequest, request: Request):
 
     if is_valid and user.must_set_password:
         elapsed = time.time() - start_time
-        remaining = _LOGIN_FAIL_DELAY_SECONDS - elapsed
+        remaining = LOGIN_FAIL_DELAY_SECONDS - elapsed
         if remaining > 0:
             await asyncio.sleep(remaining)
         raise HTTPException(
@@ -153,7 +153,7 @@ async def login(body: LoginRequest, request: Request):
         refresh_token_hash="",
         device_name=body.device_name,
         user_agent=request.headers.get("user-agent"),
-        expires_at=_utcnow(),
+        expires_at=utcnow(),
     )
     clear_attempts(key)
 
@@ -164,7 +164,7 @@ async def login(body: LoginRequest, request: Request):
 
     await trim_user_sessions(user.id)
 
-    user.last_do = _utcnow()
+    user.last_do = utcnow()
     await user.save(update_fields=["last_do"])
 
     access_token = create_access_token(
@@ -186,7 +186,7 @@ async def refresh(body: RefreshRequest):
     if payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный тип токена")
 
-    session = await _get_valid_session(int(payload["sid"]), body.refresh_token)
+    session = await get_valid_session(int(payload["sid"]), body.refresh_token)
     user = session.user
 
     new_refresh, expires_at = create_refresh_token(user_id=user.id, session_id=session.id)
@@ -194,7 +194,7 @@ async def refresh(body: RefreshRequest):
     session.expires_at = expires_at
     await session.save()
 
-    user.last_do = _utcnow()
+    user.last_do = utcnow()
     await user.save(update_fields=["last_do"])
 
     access_token = create_access_token(
@@ -242,7 +242,7 @@ async def logout(body: LogoutRequest):
         return None
 
     if verify_token_hash(body.refresh_token, session.refresh_token_hash) and session.revoked_at is None:
-        session.revoked_at = _utcnow()
+        session.revoked_at = utcnow()
         await session.save(update_fields=["revoked_at"])
 
     return None
@@ -252,7 +252,7 @@ async def logout(body: LogoutRequest):
 @min_perms(1)
 async def list_sessions(current_user: User):
     sessions = await Session.filter(user_id=current_user.id).order_by("-created_at")
-    return [_session_to_response(s) for s in sessions]
+    return [session_response(s) for s in sessions]
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -263,7 +263,7 @@ async def revoke_session(session_id: int, current_user: User):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сессия не найдена")
 
     if session.revoked_at is None:
-        session.revoked_at = _utcnow()
+        session.revoked_at = utcnow()
         await session.save(update_fields=["revoked_at"])
 
     return None
@@ -282,7 +282,7 @@ async def list_user_sessions(user_id: int, current_user: User):
     if not await User.exists(id=user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
     sessions = await Session.filter(user_id=user_id).order_by("-created_at")
-    return [_session_to_response(s) for s in sessions]
+    return [session_response(s) for s in sessions]
 
 
 @router.delete("/sessions/user/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
