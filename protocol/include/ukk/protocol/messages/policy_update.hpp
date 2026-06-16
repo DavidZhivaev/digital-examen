@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -17,6 +18,8 @@ enum class PolicyProfile : std::uint8_t {
     EXAM        = 2,    // Exam mode (strict)
     LOCKDOWN    = 3,    // Administrative lockdown
 };
+
+MSGPACK_ADD_ENUM(PolicyProfile);
 
 // Full policy rules structure
 struct PolicyRules {
@@ -44,6 +47,12 @@ struct PolicyRules {
 
     // Screen control
     bool                     allow_screen_blackout{true};
+
+    MSGPACK_DEFINE(dns_whitelist, dns_blacklist, whitelist_only, bandwidth_limit_kbps,
+                   blocked_processes, gpu_threshold_pct, auto_kill_violations,
+                   block_mass_storage, blocked_usb_classes,
+                   screenshot_interval_ms, screenshot_quality,
+                   detect_p2p, allow_screen_blackout)
 };
 
 // POLICY_UPDATE message: New policy rules
@@ -57,13 +66,15 @@ struct PolicyUpdate {
         PolicyRules   rules{};
         Timestamp     effective_from{};
         std::optional<Timestamp> effective_until{};
+
+        MSGPACK_DEFINE(policy_id, profile, rules, effective_from, effective_until)
     };
 
     using args_type = Args;
 
     [[nodiscard]] static bool validate(const Args& args) noexcept {
         if (args.effective_until.has_value()) {
-            return args.effective_until->value > args.effective_from.value;
+            return args.effective_until->epoch_ms > args.effective_from.epoch_ms;
         }
         return true;
     }

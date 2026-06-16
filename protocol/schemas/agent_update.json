@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/agent_update.json",
+  "title": "AGENT_UPDATE Message",
+  "description": "Agent binary update command from relay",
+  "type": "object",
+  "properties": {
+    "type": { "const": "AGENT_UPDATE" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "new_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Target version string"
+        },
+        "download_url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to download update from relay"
+        },
+        "sha256_hash": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "Expected SHA-256 hash of the update file"
+        },
+        "file_size": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Expected file size in bytes"
+        },
+        "force": {
+          "type": "boolean",
+          "default": false,
+          "description": "Force update even if same version"
+        },
+        "restart_required": {
+          "type": "boolean",
+          "default": true,
+          "description": "Restart agent after update"
+        }
+      },
+      "required": ["new_version", "download_url", "sha256_hash", "file_size"]
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}

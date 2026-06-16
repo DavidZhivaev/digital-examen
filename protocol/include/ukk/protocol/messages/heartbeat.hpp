@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <cstdint>
 #include <string>
 
@@ -20,6 +21,8 @@ struct Heartbeat {
         float         disk_free_gb{0.0f};   // Free disk space in GB
         std::string   active_policy{};      // Currently active policy ID
         AgentStatus   status{AgentStatus::ONLINE};
+
+        MSGPACK_DEFINE(cpu_pct, ram_pct, gpu_pct, disk_free_gb, active_policy, status)
     };
 
     using args_type = Args;

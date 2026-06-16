@@ -17,7 +17,7 @@ struct alignas(64) MessageHeader {
     std::uint16_t reserved{0};                   // 2 bytes (alignment)
     std::uint32_t payload_size{0};               // 4 bytes
     UUID          message_id{};                  // 16 bytes
-    Timestamp     timestamp{};                   // 8 bytes (epoch)
+    std::int64_t  timestamp{0};                  // 8 bytes (epoch ms)
     std::array<std::uint8_t, 24> padding{};      // padding to 64 bytes
 
     [[nodiscard]] constexpr bool is_valid() const noexcept {

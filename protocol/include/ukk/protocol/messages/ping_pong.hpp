@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <cstdint>
 
 namespace ukk::protocol::messages {
@@ -15,6 +16,8 @@ struct Ping {
     struct Args {
         std::uint64_t sequence{0};      // Sequence number for RTT calc
         Timestamp     sent_at{};
+
+        MSGPACK_DEFINE(sequence, sent_at)
     };
 
     using args_type = Args;
@@ -33,12 +36,14 @@ struct Pong {
         std::uint64_t sequence{0};      // Echo sequence number
         Timestamp     ping_sent_at{};   // Original ping timestamp
         Timestamp     pong_sent_at{};   // This response timestamp
+
+        MSGPACK_DEFINE(sequence, ping_sent_at, pong_sent_at)
     };
 
     using args_type = Args;
 
     [[nodiscard]] static constexpr bool validate(const Args& args) noexcept {
-        return args.pong_sent_at.value >= args.ping_sent_at.value;
+        return args.pong_sent_at.epoch_ms >= args.ping_sent_at.epoch_ms;
     }
 };
 

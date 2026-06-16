@@ -11,6 +11,7 @@
 #include <span>
 #include <expected>
 #include <cstring>
+#include <type_traits>
 
 namespace ukk::protocol::serialization {
 
@@ -53,9 +54,7 @@ struct pack<ukk::protocol::Timestamp> {
     msgpack::packer<Stream>& operator()(
         msgpack::packer<Stream>& o,
         const ukk::protocol::Timestamp& v) const {
-        auto epoch = std::chrono::duration_cast<std::chrono::milliseconds>(
-            v.value.time_since_epoch()).count();
-        o.pack(epoch);
+        o.pack(v.epoch_ms);
         return o;
     }
 };
@@ -65,13 +64,43 @@ struct convert<ukk::protocol::Timestamp> {
     const msgpack::object& operator()(
         const msgpack::object& o,
         ukk::protocol::Timestamp& v) const {
-        std::int64_t epoch{};
-        o.convert(epoch);
-        v.value = std::chrono::system_clock::time_point{
-            std::chrono::milliseconds{epoch}};
+        o.convert(v.epoch_ms);
         return o;
     }
 };
+
+// Generic enum pack/convert helper macro
+#define UKK_MSGPACK_ENUM_ADAPTOR(EnumType) \
+template<> \
+struct pack<EnumType> { \
+    template<typename Stream> \
+    msgpack::packer<Stream>& operator()( \
+        msgpack::packer<Stream>& o, \
+        const EnumType& v) const { \
+        o.pack(static_cast<std::underlying_type_t<EnumType>>(v)); \
+        return o; \
+    } \
+}; \
+template<> \
+struct convert<EnumType> { \
+    const msgpack::object& operator()( \
+        const msgpack::object& o, \
+        EnumType& v) const { \
+        std::underlying_type_t<EnumType> tmp; \
+        o.convert(tmp); \
+        v = static_cast<EnumType>(tmp); \
+        return o; \
+    } \
+}
+
+// Enum adaptors for types.hpp enums
+UKK_MSGPACK_ENUM_ADAPTOR(ukk::protocol::AgentStatus);
+UKK_MSGPACK_ENUM_ADAPTOR(ukk::protocol::TaskStatus);
+UKK_MSGPACK_ENUM_ADAPTOR(ukk::protocol::Severity);
+UKK_MSGPACK_ENUM_ADAPTOR(ukk::protocol::Priority);
+UKK_MSGPACK_ENUM_ADAPTOR(ukk::protocol::MessageType);
+
+#undef UKK_MSGPACK_ENUM_ADAPTOR
 
 } // namespace adaptor
 } // MSGPACK_API_VERSION_NAMESPACE
@@ -112,9 +141,9 @@ template<MessagePayload T>
         auto handle = msgpack::unpack(
             reinterpret_cast<const char*>(data.data()),
             data.size());
-        handle.get().convert(result.value);
+        handle.get().convert(result.value_);
 
-        if (!T::validate(result.value)) {
+        if (!T::validate(result.value_)) {
             result.error = "Validation failed after deserialization";
             return result;
         }
@@ -128,9 +157,10 @@ template<MessagePayload T>
 }
 
 // Serialize full message with header
+// Signature: serialize_message<T>(message_id, payload) for tests compatibility
 template<MessagePayload T>
 [[nodiscard]] std::expected<std::vector<std::uint8_t>, std::string>
-serialize_message(const typename T::args_type& args, UUID message_id = UUID::generate()) {
+serialize_message(const UUID& message_id, const typename T::args_type& args) {
 
     auto payload_result = serialize<T>(args);
     if (!payload_result) {
@@ -141,7 +171,7 @@ serialize_message(const typename T::args_type& args, UUID message_id = UUID::gen
     MessageHeader header{};
     header.type = T::message_type;
     header.message_id = message_id;
-    header.timestamp = Timestamp::now();
+    header.timestamp = Timestamp::now().epoch_ms;
     header.payload_size = static_cast<std::uint32_t>(payload_result.data.size());
 
     // Combine header + payload
@@ -153,6 +183,13 @@ serialize_message(const typename T::args_type& args, UUID message_id = UUID::gen
     result.insert(result.end(), payload_result.data.begin(), payload_result.data.end());
 
     return result;
+}
+
+// Overload with auto-generated message_id
+template<MessagePayload T>
+[[nodiscard]] std::expected<std::vector<std::uint8_t>, std::string>
+serialize_message(const typename T::args_type& args) {
+    return serialize_message<T>(UUID::generate(), args);
 }
 
 // Parse header from buffer

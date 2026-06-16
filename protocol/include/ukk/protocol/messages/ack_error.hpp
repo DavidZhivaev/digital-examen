@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <string>
 #include <cstdint>
 
@@ -15,6 +16,8 @@ struct Ack {
 
     struct Args {
         UUID acked_message_id{};    // ID of acknowledged message
+
+        MSGPACK_DEFINE(acked_message_id)
     };
 
     using args_type = Args;
@@ -39,6 +42,8 @@ enum class ErrorCode : std::uint16_t {
     INTERNAL_ERROR        = 0x00FF,
 };
 
+MSGPACK_ADD_ENUM(ErrorCode);
+
 // ERROR message: Error response
 struct Error {
     static constexpr MessageType message_type{MessageType::ERROR};
@@ -49,6 +54,8 @@ struct Error {
         ErrorCode    code{ErrorCode::UNKNOWN};
         std::string  message{};         // Human-readable error
         std::string  details{};         // Additional context (JSON)
+
+        MSGPACK_DEFINE(reference_id, code, message, details)
     };
 
     using args_type = Args;

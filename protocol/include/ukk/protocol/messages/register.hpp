@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <string>
 #include <cstdint>
 
@@ -21,6 +22,9 @@ struct Register {
         std::string agent_version{};        // Agent software version
         std::string hw_fingerprint{};       // SHA-256(CPU + MB + MAC)
         std::string os_version{};           // Operating system version
+
+        MSGPACK_DEFINE(machine_id, building_id, room_id, seat_id,
+                       agent_version, hw_fingerprint, os_version)
     };
 
     using args_type = Args;

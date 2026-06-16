@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <string>
 #include <optional>
 #include <cstdint>
@@ -20,6 +21,8 @@ struct TaskResult {
         std::string               output{};         // Command output
         std::optional<std::int32_t> error_code{};   // Error code if failed
         std::uint64_t             execution_time_ms{0}; // Execution duration
+
+        MSGPACK_DEFINE(task_id, status, output, error_code, execution_time_ms)
     };
 
     using args_type = Args;

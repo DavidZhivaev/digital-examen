@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <string>
 #include <cstdint>
 
@@ -20,6 +21,8 @@ struct AgentUpdate {
         std::uint64_t file_size{0};         // Expected file size in bytes
         bool         force{false};          // Force update even if same version
         bool         restart_required{true}; // Restart agent after update
+
+        MSGPACK_DEFINE(new_version, download_url, sha256_hash, file_size, force, restart_required)
     };
 
     using args_type = Args;

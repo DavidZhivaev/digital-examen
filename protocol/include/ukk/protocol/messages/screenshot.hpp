@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <vector>
 #include <cstdint>
 #include <optional>
@@ -20,6 +21,8 @@ struct Screenshot {
         std::uint32_t                  width{0};           // Image width
         std::uint32_t                  height{0};          // Image height
         std::uint64_t                  phash{0};           // Perceptual hash
+
+        MSGPACK_DEFINE(changed, image_data, width, height, phash)
     };
 
     using args_type = Args;

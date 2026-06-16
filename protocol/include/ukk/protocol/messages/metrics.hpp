@@ -3,6 +3,7 @@
 
 #include "../types.hpp"
 #include "../concepts.hpp"
+#include <msgpack.hpp>
 #include <vector>
 #include <string>
 #include <cstdint>
@@ -14,6 +15,8 @@ struct DnsQueryEntry {
     std::string   domain{};
     std::uint32_t query_count{0};
     bool          blocked{false};
+
+    MSGPACK_DEFINE(domain, query_count, blocked)
 };
 
 // Application focus entry
@@ -22,6 +25,8 @@ struct AppFocusEntry {
     std::string   window_title{};
     std::uint32_t duration_seconds{0};
     Timestamp     start_time{};
+
+    MSGPACK_DEFINE(app_name, window_title, duration_seconds, start_time)
 };
 
 // Process info entry
@@ -31,6 +36,8 @@ struct ProcessInfo {
     std::string   cmdline{};
     std::uint8_t  cpu_pct{0};
     std::uint32_t memory_mb{0};
+
+    MSGPACK_DEFINE(pid, name, cmdline, cpu_pct, memory_mb)
 };
 
 // METRICS message: Aggregated telemetry
@@ -46,12 +53,15 @@ struct Metrics {
         std::vector<ProcessInfo>    process_list{};
         std::uint32_t               unique_domains{0};
         std::uint32_t               blocked_queries{0};
+
+        MSGPACK_DEFINE(period_start, period_end, dns_summary, app_focus_timeline,
+                       process_list, unique_domains, blocked_queries)
     };
 
     using args_type = Args;
 
     [[nodiscard]] static bool validate(const Args& args) noexcept {
-        return args.period_end.value >= args.period_start.value;
+        return args.period_end.epoch_ms >= args.period_start.epoch_ms;
     }
 };
 

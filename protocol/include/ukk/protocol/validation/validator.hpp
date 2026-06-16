@@ -10,6 +10,8 @@
 #include <functional>
 #include <cstring>
 #include <cstdio>
+#include <array>
+#include <variant>
 
 namespace ukk::protocol::validation {
 
@@ -142,37 +144,39 @@ public:
 
 private:
     [[nodiscard]] static std::string to_hex(std::uint32_t value) {
-        char buf[16];
-        std::snprintf(buf, sizeof(buf), "%08X", value);
-        return buf;
+        std::array<char, 16> buf{};
+        std::snprintf(buf.data(), buf.size(), "%08X", value);
+        return std::string{buf.data()};
     }
 
     [[nodiscard]] static std::string to_hex(std::uint8_t value) {
-        char buf[8];
-        std::snprintf(buf, sizeof(buf), "%02X", value);
-        return buf;
+        std::array<char, 8> buf{};
+        std::snprintf(buf.data(), buf.size(), "%02X", value);
+        return std::string{buf.data()};
     }
 };
 
-// Validation strategy interface (for extensibility)
-class IValidationStrategy {
+// CRTP base for validation strategies (no virtual functions per .claudecode.md)
+template<typename Derived>
+class ValidationStrategyBase {
 public:
-    virtual ~IValidationStrategy() = default;
-    virtual ValidationResult validate(std::span<const std::uint8_t> buffer) = 0;
+    [[nodiscard]] ValidationResult validate(std::span<const std::uint8_t> buffer) {
+        return static_cast<Derived*>(this)->do_validate(buffer);
+    }
 };
 
 // Strict validation (production)
-class StrictValidationStrategy : public IValidationStrategy {
+class StrictValidationStrategy : public ValidationStrategyBase<StrictValidationStrategy> {
 public:
-    ValidationResult validate(std::span<const std::uint8_t> buffer) override {
+    [[nodiscard]] ValidationResult do_validate(std::span<const std::uint8_t> buffer) {
         return Validator::validate(buffer);
     }
 };
 
 // Lenient validation (debugging)
-class LenientValidationStrategy : public IValidationStrategy {
+class LenientValidationStrategy : public ValidationStrategyBase<LenientValidationStrategy> {
 public:
-    ValidationResult validate(std::span<const std::uint8_t> buffer) override {
+    [[nodiscard]] ValidationResult do_validate(std::span<const std::uint8_t> buffer) {
         auto result = Validator::validate(buffer);
         // Log but don't fail on certain errors
         if (result.error == ValidationError::UNSUPPORTED_VERSION) {
@@ -182,5 +186,15 @@ public:
         return result;
     }
 };
+
+// Type-erased validation strategy using std::variant (no vtables)
+using ValidationStrategy = std::variant<StrictValidationStrategy, LenientValidationStrategy>;
+
+// Helper to invoke validation on variant
+[[nodiscard]] inline ValidationResult validate_with_strategy(
+    ValidationStrategy& strategy,
+    std::span<const std::uint8_t> buffer) {
+    return std::visit([&buffer](auto& s) { return s.validate(buffer); }, strategy);
+}
 
 } // namespace ukk::protocol::validation

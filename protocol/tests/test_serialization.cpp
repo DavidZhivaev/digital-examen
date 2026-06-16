@@ -232,16 +232,19 @@ TEST_F(FullMessageSerializationTest, SerializeMessageWithHeader) {
 class TraitsTest : public ::testing::Test {};
 
 TEST_F(TraitsTest, SerializeResultType) {
-    using ResultType = SerializeResult<std::vector<std::uint8_t>>;
+    using ResultType = SerializeResult<messages::Ping>;
 
     // Test successful result
-    std::vector<std::uint8_t> data{1, 2, 3};
-    ResultType success{data};
+    ResultType success{};
+    success.data = {1, 2, 3};
+    success.success = true;
     EXPECT_TRUE(success.has_value());
     EXPECT_EQ(success.value().size(), 3);
 
     // Test error result
-    ResultType error{std::unexpected("test error")};
+    ResultType error{};
+    error.success = false;
+    error.error = "test error";
     EXPECT_FALSE(error.has_value());
 }
 
@@ -250,14 +253,17 @@ TEST_F(TraitsTest, DeserializeResultType) {
     using ResultType = DeserializeResult<TestArgs>;
 
     // Test successful result
-    TestArgs args;
-    args.sequence = 42;
-    ResultType success{args};
+    ResultType success{};
+    success.value_ = TestArgs{};
+    success.value_.sequence = 42;
+    success.success = true;
     EXPECT_TRUE(success.has_value());
     EXPECT_EQ(success.value().sequence, 42);
 
     // Test error result
-    ResultType error{std::unexpected("parse error")};
+    ResultType error{};
+    error.success = false;
+    error.error = "parse error";
     EXPECT_FALSE(error.has_value());
 }
 

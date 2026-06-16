@@ -8,22 +8,51 @@
 #include <optional>
 #include <variant>
 #include <chrono>
+#include <algorithm>
 
 namespace ukk::protocol {
 
-// UUID as fixed-size array (cache-aligned)
+// UUID as fixed-size array (16-byte aligned)
 struct alignas(16) UUID {
     std::array<std::uint8_t, 16> bytes{};
 
     [[nodiscard]] constexpr bool operator==(const UUID&) const noexcept = default;
+
+    // Check if UUID is nil (all zeros)
+    [[nodiscard]] constexpr bool is_nil() const noexcept {
+        return std::all_of(bytes.begin(), bytes.end(),
+                          [](std::uint8_t b) { return b == 0; });
+    }
+
     [[nodiscard]] std::string to_string() const;
     [[nodiscard]] static UUID generate();
     [[nodiscard]] static UUID from_string(std::string_view str);
 };
 
-// ISO 8601 timestamp wrapper
+// ISO 8601 timestamp wrapper with epoch_ms accessor
 struct Timestamp {
-    std::chrono::system_clock::time_point value{};
+    std::int64_t epoch_ms{0};  // Milliseconds since Unix epoch
+
+    // Default constructor
+    constexpr Timestamp() noexcept = default;
+
+    // Constructor from epoch milliseconds
+    constexpr explicit Timestamp(std::int64_t ms) noexcept : epoch_ms{ms} {}
+
+    // Constructor from chrono time_point
+    explicit Timestamp(std::chrono::system_clock::time_point tp) noexcept
+        : epoch_ms{std::chrono::duration_cast<std::chrono::milliseconds>(
+              tp.time_since_epoch()).count()} {}
+
+    // Get as chrono time_point
+    [[nodiscard]] std::chrono::system_clock::time_point to_time_point() const noexcept {
+        return std::chrono::system_clock::time_point{
+            std::chrono::milliseconds{epoch_ms}};
+    }
+
+    // Comparison operators
+    [[nodiscard]] constexpr bool operator==(const Timestamp&) const noexcept = default;
+    [[nodiscard]] constexpr auto operator<=>(const Timestamp&) const noexcept = default;
 
     [[nodiscard]] std::string to_iso8601() const;
     [[nodiscard]] static Timestamp now();
