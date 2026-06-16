@@ -64,7 +64,9 @@ class TeacherAssignment(models.Model):
     )
 
     group = fields.IntField(null=True)  # 1 / 2 / None (ноне только если весь класс!!!)
+    subject = fields.IntField() # предметы в works указывал
 
     class Meta:
         table = "teacher_assignments"
-        unique_together = (("teacher", "school_class", "group"),)
+        unique_together = (("teacher", "school_class", "group", "subject"),)
+        indexes = (("teacher_id", "school_class_id", "subject"),)

@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from fastapi import APIRouter, HTTPException, status
 from fastapi import UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -12,6 +14,8 @@ from classes.service import (
     add_student_class,
     assign_teacher_to_class,
     move_student_group,
+    remove_teacher_assignment,
+    remove_teacher_from_class,
     transfer_student,
     remove_student_class,
     class_students,
@@ -35,10 +39,14 @@ from classes.schemas import (
     ClassResponse,
     ClassStudentResponse,
     AssignTeacherRequest,
+    FullClassResponse,
+    StudentCard,
     StudentInviteRequest,
     StudentInviteResponse,
     AddExistingStudentRequest,
     MoveGroupRequest,
+    TeacherAssignmentResponse,
+    TeacherCard,
     TransferStudentRequest,
     AssignTeacherExtended
 )
@@ -53,10 +61,68 @@ router = APIRouter()
 async def class_response(c: SchoolClass, students_count: int = 0) -> ClassResponse:
     students = await class_student_objects(c)
 
-    group_first = [u.id for u in students if u.class_group == 1]
-    group_second = [u.id for u in students if u.class_group == 2]
+    students_g1 = []
+    students_g2 = []
+
+    for u in students:
+        card = StudentCard(
+            id=u.id,
+            person_id=u.person_id,
+            first_name=u.first_name,
+            last_name=u.last_name,
+            middle_name=u.middle_name,
+            group=u.class_group,
+        )
+
+        if u.class_group == 1:
+            students_g1.append(card)
+        elif u.class_group == 2:
+            students_g2.append(card)
 
     history = await class_history_ids(c)
+
+    assignments = await TeacherAssignment.filter(
+        school_class=c
+    ).select_related("teacher")
+
+    teachers_g1 = {}
+    teachers_g2 = {}
+
+    for a in assignments:
+        t = a.teacher
+        subject = a.subject
+
+        key = (t.id, subject)
+
+        if key not in teachers_g1:
+            teachers_g1[key] = TeacherCard(
+                id=t.id,
+                person_id=t.person_id,
+                first_name=t.first_name,
+                last_name=t.last_name,
+                middle_name=t.middle_name,
+                groups=[],
+                subject=subject,
+            )
+
+        if key not in teachers_g2:
+            teachers_g2[key] = TeacherCard(
+                id=t.id,
+                person_id=t.person_id,
+                first_name=t.first_name,
+                last_name=t.last_name,
+                middle_name=t.middle_name,
+                groups=[],
+                subject=subject,
+            )
+
+        if a.group == 1:
+            teachers_g1[key].groups.append(1)
+        elif a.group == 2:
+            teachers_g2[key].groups.append(2)
+        else:
+            teachers_g1[key].groups.extend([1, 2])
+            teachers_g2[key].groups.extend([1, 2])
 
     return ClassResponse(
         id=c.id,
@@ -64,13 +130,110 @@ async def class_response(c: SchoolClass, students_count: int = 0) -> ClassRespon
         parallel=c.parallel,
         litera=c.litera,
         corpus=c.corpus,
-        students_count=students_count,
-        group_first=group_first,
-        group_second=group_second,
-        display_name=f"{c.parallel}{c.litera}",
+
+        students_group_first=students_g1,
+        students_group_second=students_g2,
+
+        teachers_group_first=list(teachers_g1.values()),
+        teachers_group_second=list(teachers_g2.values()),
+
         history=history,
+        display_name=f"{c.parallel}{c.litera}",
+        students_count=students_count,
     )
 
+
+async def get_full_class(school_class: SchoolClass):
+    students = await class_student_objects(school_class)
+
+    students_group_1 = []
+    students_group_2 = []
+
+    for u in students:
+        student_data = {
+            "id": u.id,
+            "person_id": u.person_id,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "middle_name": u.middle_name,
+            "email": u.email,
+            "login": u.login,
+            "group": u.class_group,
+        }
+
+        if u.class_group == 1:
+            students_group_1.append(student_data)
+        elif u.class_group == 2:
+            students_group_2.append(student_data)
+
+    assignments = await TeacherAssignment.filter(
+        school_class=school_class
+    ).select_related("teacher")
+
+    homeroom_teacher = None
+    subject_teachers = {}
+
+    if school_class.teacher_id:
+        t = await User.get_or_none(id=school_class.teacher_id)
+        if t:
+            homeroom_teacher = {
+                "id": t.id,
+                "person_id": t.person_id,
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "middle_name": t.middle_name,
+            }
+
+    teacher_map = defaultdict(lambda: {
+        "id": None,
+        "person_id": None,
+        "first_name": None,
+        "last_name": None,
+        "middle_name": None,
+        "groups": set()
+    })
+
+    for a in assignments:
+        t = a.teacher
+        key = (t.id, a.subject)
+
+        if teacher_map[key]["id"] is None:
+            teacher_map[key].update({
+                "id": t.id,
+                "person_id": t.person_id,
+                "first_name": t.first_name,
+                "last_name": t.last_name,
+                "middle_name": t.middle_name,
+                "subject": a.subject,
+            })
+
+        if a.group in (1, 2):
+            teacher_map[key]["groups"].add(a.group)
+        else:
+            teacher_map[key]["groups"].update([1, 2])
+
+    subject_teachers = [
+        {**v, "groups": list(v["groups"])}
+        for v in teacher_map.values()
+    ]
+
+    return {
+        "id": school_class.id,
+        "teacher": homeroom_teacher,
+        "parallel": school_class.parallel,
+        "litera": school_class.litera,
+        "corpus": school_class.corpus,
+        "display_name": f"{school_class.parallel}{school_class.litera}",
+
+        "students_group_first": students_group_1,
+        "students_group_second": students_group_2,
+        "students": students_group_1 + students_group_2,
+
+        "teachers": subject_teachers,
+        "count_teachers": len(subject_teachers),
+
+        "history": await class_history_ids(school_class)
+    }
 
 
 @router.get("/health")
@@ -78,7 +241,7 @@ async def health():
     return {"service": "classes", "status": "ok"}
 
 
-@router.get("/", response_model=list[ClassResponse])
+@router.get("/show-short", response_model=list[ClassResponse])
 @min_perms(settings.TEACHER_ROLE)
 async def list_classes(current_user: User):
     if is_operator_or_above(current_user):
@@ -95,6 +258,22 @@ async def list_classes(current_user: User):
 
     return result
 
+@router.get("/show-full", response_model=list[FullClassResponse])
+@min_perms(settings.TEACHER_ROLE)
+async def list_classes(current_user: User):
+    if is_operator_or_above(current_user):
+        classes = await SchoolClass.all().order_by("corpus", "parallel", "litera")
+    else:
+        classes = await SchoolClass.filter(
+            teacher_id=current_user.id
+        ).order_by("corpus", "parallel", "litera")
+
+    result = []
+    for c in classes:
+        result.append(await get_full_class(c))
+
+    return result
+
 
 @router.post("/", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
 @min_perms(settings.TEACHER_ROLE)
@@ -107,7 +286,7 @@ async def create_class_endpoint(current_user: User, body: ClassCreate):
     return await class_response(school_class)
 
 
-@router.get("/{class_id}", response_model=ClassResponse)
+@router.get("/{class_id}/short", response_model=ClassResponse)
 @min_perms(settings.TEACHER_ROLE)
 async def get_class(current_user: User, class_id: int):
     school_class = await get_class_obj(class_id)
@@ -115,6 +294,14 @@ async def get_class(current_user: User, class_id: int):
 
     students = await class_students(school_class)
     return await class_response(school_class, len(students))
+
+@router.get("/{class_id}/full", response_model=FullClassResponse)
+@min_perms(settings.TEACHER_ROLE)
+async def get_class(current_user: User, class_id: int):
+    school_class = await get_class_obj(class_id)
+    await can_view_class(current_user, school_class)
+
+    return await get_full_class(school_class)
 
 
 @router.patch("/{class_id}", response_model=ClassResponse)
@@ -150,7 +337,6 @@ async def delete_class_endpoint(
     return None
 
 
-
 @router.patch("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
 async def set_class_teacher(current_user: User, class_id: int, body: AssignTeacherRequest):
@@ -169,7 +355,7 @@ async def set_class_teacher(current_user: User, class_id: int, body: AssignTeach
     students = await class_students(school_class)
     return await class_response(school_class, len(students))
 
-@router.post("/{class_id}/assign-teacher")
+@router.post("/{class_id}/assign-teacher", response_model=TeacherAssignmentResponse)
 @min_perms(settings.TEACHER_ROLE)
 async def assign_teacher(
     class_id: int,
@@ -178,39 +364,93 @@ async def assign_teacher(
 ):
     school_class = await get_class_obj(class_id)
 
+    already_assigned = await TeacherAssignment.filter(
+        teacher_id=body.teacher_id,
+        school_class=school_class,
+        group=body.group,
+        subject=body.subject
+    ).exists()
+
+    if already_assigned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Этот учитель уже назначен на данный предмет в этой группе/классе."
+        )
+
     assignment = await assign_teacher_to_class(
         actor=current_user,
         teacher_id=body.teacher_id,
         school_class=school_class,
         group=body.group,
+        subject=body.subject
     )
 
-    return {
-        "id": assignment.id,
-        "teacher_id": assignment.teacher_id,
-        "class_id": school_class.id,
-        "group": assignment.group,
-    }
+    return TeacherAssignmentResponse(
+        id=assignment.id,
+        teacher_id=assignment.teacher_id,
+        class_id=school_class.id,
+        group=assignment.group,
+        subject=assignment.subject
+    )
 
 @router.get("/my/assigned-classes")
 @min_perms(settings.TEACHER_ROLE)
 async def my_assigned_classes(current_user: User):
     assignments = await TeacherAssignment.filter(
         teacher_id=current_user.id
-    ).prefetch_related("school_class")
+    ).select_related("school_class")
 
-    result = []
+    result = {}
 
     for a in assignments:
         c = a.school_class
-        result.append({
-            "class_id": c.id,
-            "parallel": c.parallel,
-            "litera": c.litera,
+
+        class_id = c.id
+
+        if class_id not in result:
+            result[class_id] = {
+                "class_id": class_id,
+                "parallel": c.parallel,
+                "litera": c.litera,
+                "corpus": c.corpus,
+                "subjects": defaultdict(list),
+            }
+
+        result[class_id]["subjects"][a.subject].append({
             "group": a.group,
         })
 
-    return result
+    for class_data in result.values():
+        class_data["subjects"] = dict(class_data["subjects"])
+
+    return list(result.values())
+
+@router.delete("/teacher-assignment/{assignment_id}")
+@min_perms(settings.TEACHER_ROLE)
+async def delete_assignment(
+    assignment_id: int,
+    current_user: User,
+):
+    await remove_teacher_assignment(
+        actor=current_user,
+        assignment_id=assignment_id,
+    )
+    return {"status": "ok"}
+
+@router.delete("/{class_id}/teacher/{teacher_id}") # Удалит учителя вообще со всего класса!
+@min_perms(settings.TEACHER_ROLE)
+async def remove_teacher_from_class_endpoint(
+    class_id: int,
+    teacher_id: int,
+    current_user: User,
+):
+    await remove_teacher_from_class(
+        actor=current_user,
+        teacher_id=teacher_id,
+        class_id=class_id,
+    )
+
+    return {"status": "ok"}
 
 @router.delete("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)

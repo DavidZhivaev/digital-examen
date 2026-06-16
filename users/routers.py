@@ -18,6 +18,7 @@ from users.admin_service import validate_admin_can_manage, validate_assignable_r
 from users.models import User
 from users.role_service import validate_role_change
 from core.roles import ROLE_TEACHER, ROLE_STUDENT
+from classes.models import SchoolClass
 from users.schemas import (
     PaginatedUsersResponse,
     RoleUpdate,
@@ -143,34 +144,43 @@ async def create_user(body: UserCreate, current_user: User):
         if body.role != ROLE_STUDENT:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Учитель может создавать пользователей только с ролью 'Ученик'"
+                detail="Учитель может создавать только учеников"
             )
-        from classes.models import SchoolClass
+
         school_class = await SchoolClass.get_or_none(id=body.class_id)
+
         if not school_class or school_class.teacher_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Вы можете создавать учеников только для своего класса"
+                detail="Можно создавать учеников только в своём классе"
             )
+
+        body.class_group = body.class_group
+
     else:
         validate_assignable_role(current_user, body.role)
 
     last_latin = transliterate(body.last_name).capitalize()
-    first_initial = transliterate(body.first_name[0]).upper() if body.first_name else ""
+    first_initial = transliterate(body.first_name[0]).upper()
     middle_initial = transliterate(body.middle_name[0]).upper() if body.middle_name else ""
-    
+
     base_login = f"{last_latin}{first_initial}{middle_initial}"
     generated_login = base_login
-    
+
     counter = 2
     while await User.exists(login=generated_login):
         generated_login = f"{base_login}{counter}"
         counter += 1
 
     data = body.model_dump()
-    data["login"] = generated_login
-    temp_password = generate_temp_password()
 
+    if body.role != ROLE_STUDENT:
+        data["class_id"] = None
+        data["class_group"] = None
+
+    data["login"] = generated_login
+
+    temp_password = generate_temp_password()
     data["password_hash"] = hash_password(temp_password)
     data["must_set_password"] = True
 
@@ -178,20 +188,20 @@ async def create_user(body: UserCreate, current_user: User):
         user = await User.create(**data)
     except IntegrityError:
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+            status_code=409,
             detail="Пользователь с таким email уже существует",
         )
 
     raw_token = await mark_user_must_set_password(user)
     link = build_password_link(raw_token)
-    
+
+    school_class = await SchoolClass.get_or_none(id=body.class_id)
+
+    class_label = ""
+    if school_class and body.role == ROLE_STUDENT:
+        class_label = f"{school_class.parallel}{school_class.litera}-{body.class_group}"
+
     try:
-        school_class = await SchoolClass.get_or_none(id=body.class_id)
-
-        class_label = ""
-        if school_class:
-            class_label = f"{school_class.name}{body.class_group}"
-
         await send_password_email(
             to=user.email,
             subject="Создана новая учетная запись!",
@@ -201,15 +211,16 @@ async def create_user(body: UserCreate, current_user: User):
                 f"Роль: ученик\n"
                 f"Класс: {class_label}\n\n"
                 f"Логин: {user.login}\n"
+                f"Создал: {current_user.login}"
                 f"Временный пароль: {temp_password}\n\n"
-                f"После входа система попросит вас сменить пароль."
+                f"После входа система попросит сменить пароль."
             ),
             link=link
         )
-    except Exception as exc:
+    except Exception:
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
-            detail=f"Пользователь создан (Логин: {user.login}), но не удалось отправить письмо!",
+            status_code=201,
+            detail=f"Пользователь создан (логин: {user.login}), но письмо не отправлено",
         )
 
     return user_response(user)

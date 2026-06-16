@@ -32,35 +32,43 @@ async def assign_teacher_to_class(
     actor: User,
     teacher_id: int,
     school_class: SchoolClass,
-    group: int | None = None,
-    subject: str | None = None,
-    can_grade: bool = True,
-    can_view_works: bool = True,
+    group: int | None,
+    subject: int
 ):
     can_manage_class(actor, school_class)
 
     teacher = await User.get_or_none(id=teacher_id)
-    if not teacher or teacher.role != ROLE_TEACHER:
-        raise HTTPException(400, "Пользователь не учитель")
+    if not teacher:
+        raise HTTPException(404, "Учитель не найден")
 
-    exists = await TeacherAssignment.filter(
+    if teacher.role != ROLE_TEACHER:
+        raise HTTPException(400, "Не учитель")
+
+    if group is not None:
+        validate_group(group)
+
+    assignment = await TeacherAssignment.create(
         teacher_id=teacher_id,
         school_class=school_class,
         group=group,
-        subject=subject,
-    ).exists()
-
-    if exists:
-        raise HTTPException(409, "Уже назначен")
-
-    return await TeacherAssignment.create(
-        teacher_id=teacher_id,
-        school_class=school_class,
-        group=group,
-        subject=subject,
-        can_grade=can_grade,
-        can_view_works=can_view_works,
+        subject=subject
     )
+
+    return assignment
+
+async def remove_teacher_assignment(
+    *,
+    actor: User,
+    assignment_id: int,
+):
+    assignment = await TeacherAssignment.get_or_none(id=assignment_id)
+
+    if not assignment:
+        raise HTTPException(404, "Не найдено")
+
+    can_manage_class(actor, assignment.school_class)
+
+    await assignment.delete()
 
 async def class_student_ids(school_class: SchoolClass) -> list[int]:
     students = await User.filter(
@@ -267,3 +275,21 @@ def validate_import_rows(rows):
         if r.email in emails:
             raise HTTPException(400, f"Duplicate email: {r.email}")
         emails.add(r.email)
+
+
+async def remove_teacher_from_class(
+    *,
+    actor: User,
+    teacher_id: int,
+    class_id: int,
+):
+    school_class = await SchoolClass.get_or_none(id=class_id)
+    if not school_class:
+        raise HTTPException(404, "Класс не найден")
+
+    can_manage_class(actor, school_class)
+
+    await TeacherAssignment.filter(
+        teacher_id=teacher_id,
+        school_class_id=class_id,
+    ).delete()

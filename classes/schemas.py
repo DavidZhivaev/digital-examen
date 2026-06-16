@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import List
+from typing import Any, List, Optional
 
 
 class ClassCreate(BaseModel):
@@ -78,16 +78,35 @@ class ClassImportRequest(BaseModel):
 class ClassExportFilter(BaseModel):
     group: int | None = Field(None, ge=1, le=2)
 
+class PersonCard(BaseModel):
+    id: int
+    person_id: str
+    first_name: str
+    last_name: str
+    middle_name: str | None = None
+
+class StudentCard(PersonCard):
+    group: int | None
+
+class TeacherCard(PersonCard):
+    groups: list[int] = []
+    subject: int
 
 class ClassResponse(BaseModel):
     id: int
-    teacher_id: int | None
+    teacher_id: int | None  # классрук
+
     parallel: int
     litera: str
-    group_first: list[int]
-    group_second: list[int]
-    history: list[int]
     corpus: int
+
+    students_group_first: list[StudentCard]
+    students_group_second: list[StudentCard]
+
+    teachers_group_first: list[TeacherCard]
+    teachers_group_second: list[TeacherCard]
+
+    history: list[int]
     display_name: str
     students_count: int = 0
 
@@ -118,4 +137,77 @@ class StudentInviteResponse(BaseModel):
 
 class AssignTeacherExtended(BaseModel):
     teacher_id: int
-    group: int | None = None
+    group: int | None = None  # None весь класс
+    subject: int
+
+class TeacherAssignmentResponse(BaseModel):
+    id: int
+    teacher_id: int
+    class_id: int
+    group: int | None
+    subject: int
+
+
+class StudentSchema(BaseModel):
+    id: int
+    person_id: str
+    first_name: str
+    last_name: str
+    middle_name: str
+    email: str
+    login: str
+    group: int
+
+
+class StudentsSchema(BaseModel):
+    group_1: List[StudentSchema]
+    group_2: List[StudentSchema]
+    all: List[StudentSchema]
+    count: int
+
+
+class TeacherSchema(BaseModel):
+    id: int
+    person_id: str
+    first_name: str
+    last_name: str
+    middle_name: str
+    subject: Optional[str] = None
+    groups: List[int] = []
+
+
+class TeachersSchema(BaseModel):
+    homeroom: Optional[TeacherSchema]
+    subject_teachers: List[TeacherSchema]
+    count_teachers: int
+
+
+class ClassSchema(BaseModel):
+    id: int
+    teacher_id: Optional[int] = None
+    parallel: int
+    litera: str
+    corpus: int
+    display_name: str
+
+class FullClassResponse(BaseModel):
+    id: int
+    teacher: PersonCard | None = None
+
+    parallel: int
+    litera: str
+    corpus: int
+    display_name: str
+
+    students_group_first: list[StudentSchema]
+    students_group_second: list[StudentSchema]
+
+    students: list[StudentSchema]
+
+    teachers: list[TeacherSchema]
+
+    count_teachers: int
+
+    history: list[int] = []
+
+    model_config = {"from_attributes": True}

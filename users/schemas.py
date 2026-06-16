@@ -3,6 +3,8 @@ import re
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
+from core.config import Settings
+
 _PASSWORD_RE = re.compile(r"^(?=.*[A-Za-z])(?=.*\d).{8,}$")
 
 
@@ -24,6 +26,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     role: int = Field(default=1, ge=1)
     class_id: int | None = Field(None, alias="class")
+    class_group: int | None = None
     first_name: str = Field(min_length=1, max_length=255)
     last_name: str = Field(min_length=1, max_length=255)
     middle_name: str | None = Field(None, max_length=255)
@@ -34,8 +37,13 @@ class UserCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_student_class(self) -> "UserCreate":
-        if self.role == 1 and not self.class_id:
-            raise ValueError("Для роли 'Ученик' обязательно указать класс (class_id)")
+        if self.role == 1:
+            if not self.class_id or self.class_group is None:
+                raise ValueError("Для ученика обязательно class_id и class_group")
+        else:
+            self.class_id = None
+            self.class_group = None
+
         return self
 
 
