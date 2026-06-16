@@ -11,13 +11,13 @@ from users.models import User
 UNUSABLE_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
 async def create_password_token(user: User, purpose: str) -> str:
     raw_token = secrets.token_urlsafe(48)
-    expires_at = _utcnow() + timedelta(hours=settings.PASSWORD_TOKEN_EXPIRE_HOURS)
+    expires_at = utcnow() + timedelta(hours=settings.PASSWORD_TOKEN_EXPIRE_HOURS)
     await PasswordToken.create(
         user=user,
         token_hash=hash_token(raw_token),
@@ -41,13 +41,13 @@ async def consume_password_token(raw_token: str, *, expected_purpose: str | None
     if record.is_used:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ссылка уже использована")
 
-    if record.expires_at < _utcnow():
+    if record.expires_at < utcnow():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Ссылка истекла")
 
     if expected_purpose is not None and record.purpose != expected_purpose:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Недействительная ссылка")
 
-    record.used_at = _utcnow()
+    record.used_at = utcnow()
     await record.save(update_fields=["used_at"])
     return record.user
 
@@ -63,5 +63,5 @@ async def revoke_user_password_tokens(user_id: int):
         user_id=user_id,
         used_at__isnull=True,
     ).update(
-        used_at=_utcnow()
+        used_at=utcnow()
     )

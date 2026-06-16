@@ -5,7 +5,7 @@ from core.config import settings
 from core.security import verify_token_hash
 
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
@@ -22,7 +22,7 @@ async def trim_user_sessions(user_id: int, keep: int | None = None) -> None:
 
 
 async def revoke_all_user_sessions(user_id: int, *, except_session_id: int | None = None) -> None:
-    now = _utcnow()
+    now = utcnow()
     query = Session.filter(user_id=user_id, revoked_at__isnull=True)
     if except_session_id is not None:
         query = query.exclude(id=except_session_id)
@@ -33,7 +33,7 @@ async def get_active_session(session_id: int, user_id: int) -> Session | None:
     session = await Session.get_or_none(id=session_id, user_id=user_id)
     if session is None or session.revoked_at is not None:
         return None
-    if session.expires_at < _utcnow():
+    if session.expires_at < utcnow():
         return None
     return session
 

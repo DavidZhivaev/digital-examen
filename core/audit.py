@@ -103,6 +103,7 @@ class AuthAuditMiddleware(BaseHTTPMiddleware):
         query_params = _mask_data(dict(request.query_params))
 
         body = None
+        raw = b""
 
         if request.method in BODY_METHODS:
             content_type = request.headers.get("content-type", "")
