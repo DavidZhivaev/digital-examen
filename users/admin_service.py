@@ -17,5 +17,5 @@ def validate_assignable_role(actor: User, role: int) -> None:
     if role >= actor.role:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нельзя назначить роль выше своей",
+            detail="Нельзя назначить роль выше своей и равную себе. Администраторов создает технический специалист первого корпуса вручную!",
         )

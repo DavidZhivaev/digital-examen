@@ -19,9 +19,12 @@ def min_perms(min_role: int) -> Callable:
 
     def decorator(endpoint: Callable) -> Callable:
         sig = inspect.signature(endpoint)
+
         params = [
-            p for p in sig.parameters.values() if p.name != "current_user"
+            p for p in sig.parameters.values()
+            if p.name != "current_user"
         ]
+
         params.append(
             inspect.Parameter(
                 "current_user",
@@ -31,12 +34,9 @@ def min_perms(min_role: int) -> Callable:
             )
         )
 
-        endpoint_sig = inspect.signature(endpoint)
-
         @functools.wraps(endpoint)
         async def wrapper(*args, **kwargs):
-            bound = endpoint_sig.bind_partial(*args, **kwargs)
-            return await endpoint(*bound.args, **bound.kwargs)
+            return await endpoint(*args, **kwargs)
 
         wrapper.__signature__ = sig.replace(parameters=params)
         return wrapper

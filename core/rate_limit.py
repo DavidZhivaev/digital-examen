@@ -23,14 +23,14 @@ class SlidingWindowLimiter:
     def __init__(self, max_requests: int, window_seconds: int):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._buckets: dict[str, deque[float]] = defaultdict(deque)
-        self._last_cleanup = time.monotonic()
+        self.buckets: dict[str, deque[float]] = defaultdict(deque)
+        self.last_cleanup = time.monotonic()
 
     def check(self, key: str) -> tuple[bool, int]:
         now = time.monotonic()
-        self._cleanup(now)
+        self.cleanup(now)
 
-        bucket = self._buckets[key]
+        bucket = self.buckets[key]
         cutoff = now - self.window_seconds
         while bucket and bucket[0] <= cutoff:
             bucket.popleft()
@@ -43,18 +43,18 @@ class SlidingWindowLimiter:
         return True, 0
 
     def cleanup(self, now: float) -> None:
-        if now - self._last_cleanup < 120:
+        if now - self.last_cleanup < 120:
             return
-        self._last_cleanup = now
+        self.last_cleanup = now
         cutoff = now - self.window_seconds
         stale_keys = []
-        for key, bucket in self._buckets.items():
+        for key, bucket in self.buckets.items():
             while bucket and bucket[0] <= cutoff:
                 bucket.popleft()
             if not bucket:
                 stale_keys.append(key)
         for key in stale_keys:
-            del self._buckets[key]
+            del self.buckets[key]
 
 
 ip_limiter = SlidingWindowLimiter(

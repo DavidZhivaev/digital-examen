@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from fastapi import HTTPException, status
 from tortoise.transactions import in_transaction
 
-from classes.models import SchoolClass, StudentClassHistory
+from classes.models import SchoolClass, StudentClassHistory, TeacherAssignment
 from classes.permissions import (
     can_manage_class,
     can_manage_student,
@@ -20,8 +20,79 @@ def validate_group(group: int):
     if group not in (1, 2):
         raise HTTPException(400, "Группа должна быть 1 или 2")
 
+async def get_teacher_classes(user: User):
+    assignments = await TeacherAssignment.filter(
+        teacher_id=user.id
+    ).prefetch_related("school_class")
 
-async def get_class(class_id: int) -> SchoolClass:
+    return list({a.school_class for a in assignments})
+
+async def assign_teacher_to_class(
+    *,
+    actor: User,
+    teacher_id: int,
+    school_class: SchoolClass,
+    group: int | None = None,
+    subject: str | None = None,
+    can_grade: bool = True,
+    can_view_works: bool = True,
+):
+    can_manage_class(actor, school_class)
+
+    teacher = await User.get_or_none(id=teacher_id)
+    if not teacher or teacher.role != ROLE_TEACHER:
+        raise HTTPException(400, "Пользователь не учитель")
+
+    exists = await TeacherAssignment.filter(
+        teacher_id=teacher_id,
+        school_class=school_class,
+        group=group,
+        subject=subject,
+    ).exists()
+
+    if exists:
+        raise HTTPException(409, "Уже назначен")
+
+    return await TeacherAssignment.create(
+        teacher_id=teacher_id,
+        school_class=school_class,
+        group=group,
+        subject=subject,
+        can_grade=can_grade,
+        can_view_works=can_view_works,
+    )
+
+async def class_student_ids(school_class: SchoolClass) -> list[int]:
+    students = await User.filter(
+        class_id=school_class.id,
+        role=ROLE_STUDENT,
+    ).values_list("id", flat=True)
+
+    return list(students)
+
+async def class_student_objects(school_class: SchoolClass) -> list[User]:
+    return await User.filter(
+        class_id=school_class.id,
+        role=ROLE_STUDENT,
+    )
+
+async def class_history_ids(school_class: SchoolClass) -> list[int]:
+    return await StudentClassHistory.filter(
+        school_class=school_class,
+    ).values_list("id", flat=True)
+
+
+async def class_history_objects(
+    school_class: SchoolClass,
+) -> list[StudentClassHistory]:
+    return await StudentClassHistory.filter(
+        school_class=school_class,
+    ).prefetch_related(
+        "user",
+        "school_class",
+    )
+
+async def get_class_obj(class_id: int) -> SchoolClass:
     obj = await SchoolClass.get_or_none(id=class_id)
     if not obj:
         raise HTTPException(404, "Класс не найден")
@@ -127,7 +198,8 @@ async def remove_student_class(
 
 
 async def class_students(school_class: SchoolClass):
-    users = await User.filter(class_id=school_class.id)
+    users = await User.filter(class_id=school_class.id, role=1)
+    print(len(users))
 
     return [
         {
@@ -140,6 +212,7 @@ async def class_students(school_class: SchoolClass):
             "middle_name": u.middle_name,
             "group": u.class_group,
             "must_set_password": u.must_set_password,
+            "role": 1
         }
         for u in users
     ]
@@ -164,7 +237,7 @@ async def create_class(parallel: int, litera: str, corpus: int):
     )
 
 
-async def update_class(school_class: SchoolClass, data: dict):
+async def update_class_obj(school_class: SchoolClass, data: dict):
     for k, v in data.items():
         if k == "litera":
             v = v.upper()

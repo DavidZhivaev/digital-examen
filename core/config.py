@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     JWT_ISSUER: str = "digital-school"
     JWT_AUDIENCE: str = "digital-school-api"
 
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 600
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     MAX_SESSIONS_PER_USER: int = 5
     PASSWORD_TOKEN_EXPIRE_HOURS: int = 72

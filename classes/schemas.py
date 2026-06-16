@@ -102,8 +102,9 @@ class ClassStudentResponse(BaseModel):
     first_name: str
     last_name: str
     middle_name: str | None
-    group: int
-    must_set_password: bool = False
+    group: int | None
+    must_set_password: bool = False,
+    role: int
 
 
 class StudentInviteResponse(BaseModel):
@@ -113,3 +114,8 @@ class StudentInviteResponse(BaseModel):
     class_id: int
     group: int
     password_link_sent: bool = False
+
+
+class AssignTeacherExtended(BaseModel):
+    teacher_id: int
+    group: int | None = None

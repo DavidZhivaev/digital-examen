@@ -11,10 +11,6 @@ from users.models import User
 bearer_scheme = HTTPBearer(auto_error=False)
 
 
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
-
-
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> User:

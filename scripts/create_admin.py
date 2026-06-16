@@ -22,6 +22,7 @@ async def main():
     email = input("Email: ").strip()
     first_name = input("Фамилия: ").strip()
     last_name = input("Имя: ").strip()
+    middle_name = input("Отчество (Enter если нет): ").strip() or None
 
     user = await User.create(
         login=login,
@@ -29,6 +30,7 @@ async def main():
         email=email,
         first_name=first_name,
         last_name=last_name,
+        middle_name=middle_name,
         role=settings.ADMIN_ROLE,
     )
     print(f"Администратор создан: id={user.id}, person_id={user.person_id}")

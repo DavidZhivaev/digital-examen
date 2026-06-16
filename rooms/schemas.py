@@ -2,7 +2,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RoomCreate(BaseModel):
-    corpus: int = Field(ge=1)
+    corpus: int = Field(ge=1, le=4)
     number: int = Field(ge=1)
 
     rows: int = Field(ge=1, le=20)

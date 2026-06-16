@@ -89,6 +89,9 @@ async def update_me(body: UserSelfUpdate, current_user: User):
     if password_changed:
         data["password_hash"] = hash_password(data.pop("password"))
 
+    if current_user.role == 1 and ("first_name" in data or "last_name" in data or "middle_name" in data or "sex" in data):
+        raise HTTPException(status_code=403, detail="Существенные изменения в УЗ могут вносить только сотрудники школы!")
+
     for field, value in data.items():
         setattr(current_user, field, value)
 
@@ -104,6 +107,7 @@ async def update_me(body: UserSelfUpdate, current_user: User):
 @router.get("/", response_model=PaginatedUsersResponse)
 @min_perms(settings.ADMIN_ROLE)
 async def list_users(
+    current_user: User,
     page: int = Query(1, ge=1),
     page_size: int = Query(settings.USERS_PAGE_SIZE_DEFAULT, ge=1, le=settings.USERS_PAGE_SIZE_MAX),
 ):
@@ -205,7 +209,7 @@ async def create_user(body: UserCreate, current_user: User):
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_201_CREATED,
-            detail=f"Пользователь создан (Логин: {user.login}), но не удалось отправить письмо: {exc}",
+            detail=f"Пользователь создан (Логин: {user.login}), но не удалось отправить письмо!",
         )
 
     return user_response(user)
@@ -305,7 +309,7 @@ async def delete_user(person_id: UUID, current_user: User):
     if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Нельзя удалить собственную учётную запись",
+            detail="Нельзя удалить собственную учётную запись!",
         )
 
     user = await User.get_or_none(id=user.id)
@@ -319,7 +323,7 @@ async def delete_user(person_id: UUID, current_user: User):
         if admin_count <= 1:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Нельзя удалить последнего администратора",
+                detail="Нельзя удалить последнего администратора!",
             )
 
     await revoke_all_user_sessions(user.id)

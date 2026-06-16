@@ -4,23 +4,27 @@ from fastapi.responses import StreamingResponse
 import io
 from openpyxl import Workbook, load_workbook
 
-from classes.models import SchoolClass
+from classes.models import SchoolClass, TeacherAssignment
 from fastapi import Query
 from users.routers import transliterate
 from tortoise.transactions import in_transaction
 from classes.service import (
     add_student_class,
+    assign_teacher_to_class,
     move_student_group,
     transfer_student,
     remove_student_class,
     class_students,
     create_class,
-    update_class,
+    update_class_obj,
     delete_class,
-    get_class,
+    get_class_obj,
+    class_student_objects,
+    class_history_ids
 )
 from classes.permissions import (
     can_manage_class,
+    can_view_class,
     is_homeroom_teacher,
     is_operator_or_above,
 )
@@ -36,6 +40,7 @@ from classes.schemas import (
     AddExistingStudentRequest,
     MoveGroupRequest,
     TransferStudentRequest,
+    AssignTeacherExtended
 )
 from core.config import settings
 from core.permissions import min_perms
@@ -45,15 +50,25 @@ from users.models import User
 router = APIRouter()
 
 
-def class_response(c: SchoolClass, students_count: int = 0) -> ClassResponse:
+async def class_response(c: SchoolClass, students_count: int = 0) -> ClassResponse:
+    students = await class_student_objects(c)
+
+    group_first = [u.id for u in students if u.class_group == 1]
+    group_second = [u.id for u in students if u.class_group == 2]
+
+    history = await class_history_ids(c)
+
     return ClassResponse(
         id=c.id,
         teacher_id=c.teacher_id,
         parallel=c.parallel,
         litera=c.litera,
         corpus=c.corpus,
-        display_name=c.display_name,
         students_count=students_count,
+        group_first=group_first,
+        group_second=group_second,
+        display_name=f"{c.parallel}{c.litera}",
+        history=history,
     )
 
 
@@ -64,7 +79,7 @@ async def health():
 
 
 @router.get("/", response_model=list[ClassResponse])
-@min_perms(ROLE_TEACHER)
+@min_perms(settings.TEACHER_ROLE)
 async def list_classes(current_user: User):
     if is_operator_or_above(current_user):
         classes = await SchoolClass.all().order_by("corpus", "parallel", "litera")
@@ -76,55 +91,55 @@ async def list_classes(current_user: User):
     result = []
     for c in classes:
         students = await class_students(c)
-        result.append(class_response(c, len(students)))
+        result.append(await class_response(c, len(students)))
 
     return result
 
 
 @router.post("/", response_model=ClassResponse, status_code=status.HTTP_201_CREATED)
-@min_perms(settings.OPERATOR_ROLE)
-async def create_class_endpoint(body: ClassCreate, current_user: User):
+@min_perms(settings.TEACHER_ROLE)
+async def create_class_endpoint(current_user: User, body: ClassCreate):
     school_class = await create_class(
         parallel=body.parallel,
         litera=body.litera,
         corpus=body.corpus,
     )
-    return class_response(school_class)
+    return await class_response(school_class)
 
 
 @router.get("/{class_id}", response_model=ClassResponse)
-@min_perms(ROLE_TEACHER)
-async def get_class(class_id: int, current_user: User):
-    school_class = await get_class(class_id)
-    can_manage_class(current_user, school_class)
+@min_perms(settings.TEACHER_ROLE)
+async def get_class(current_user: User, class_id: int):
+    school_class = await get_class_obj(class_id)
+    await can_view_class(current_user, school_class)
 
     students = await class_students(school_class)
-    return class_response(school_class, len(students))
+    return await class_response(school_class, len(students))
 
 
 @router.patch("/{class_id}", response_model=ClassResponse)
-@min_perms(ROLE_TEACHER)
-async def update_class(class_id: int, body: ClassUpdate, current_user: User):
-    school_class = await get_class(class_id)
+@min_perms(settings.TEACHER_ROLE)
+async def update_class(current_user: User, body: ClassUpdate, class_id: int):
+    school_class = await get_class_obj(class_id)
     can_manage_class(current_user, school_class)
 
-    school_class = await update_class(
+    school_class = await update_class_obj(
         school_class,
         body.model_dump(exclude_unset=True),
     )
 
     students = await class_students(school_class)
-    return class_response(school_class, len(students))
+    return await class_response(school_class, len(students))
 
 
 @router.delete("/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(settings.OPERATOR_ROLE)
 async def delete_class_endpoint(
-    class_id: int, 
     current_user: User, 
+    class_id: int, 
     delete_students: bool = Query(False, description="Удалить ли всех учащихся из этого класса?")
 ):
-    school_class = await get_class(class_id)
+    school_class = await get_class_obj(class_id)
     
     async with in_transaction():
         if delete_students:
@@ -138,8 +153,8 @@ async def delete_class_endpoint(
 
 @router.patch("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
-async def set_class_teacher(class_id: int, body: AssignTeacherRequest, current_user: User):
-    school_class = await get_class(class_id)
+async def set_class_teacher(current_user: User, class_id: int, body: AssignTeacherRequest):
+    school_class = await get_class_obj(class_id)
 
     teacher = await User.get_or_none(id=body.teacher_id)
     if not teacher:
@@ -152,34 +167,76 @@ async def set_class_teacher(class_id: int, body: AssignTeacherRequest, current_u
     await school_class.save()
 
     students = await class_students(school_class)
-    return class_response(school_class, len(students))
+    return await class_response(school_class, len(students))
 
+@router.post("/{class_id}/assign-teacher")
+@min_perms(settings.TEACHER_ROLE)
+async def assign_teacher(
+    class_id: int,
+    body: AssignTeacherExtended,
+    current_user: User,
+):
+    school_class = await get_class_obj(class_id)
+
+    assignment = await assign_teacher_to_class(
+        actor=current_user,
+        teacher_id=body.teacher_id,
+        school_class=school_class,
+        group=body.group,
+    )
+
+    return {
+        "id": assignment.id,
+        "teacher_id": assignment.teacher_id,
+        "class_id": school_class.id,
+        "group": assignment.group,
+    }
+
+@router.get("/my/assigned-classes")
+@min_perms(settings.TEACHER_ROLE)
+async def my_assigned_classes(current_user: User):
+    assignments = await TeacherAssignment.filter(
+        teacher_id=current_user.id
+    ).prefetch_related("school_class")
+
+    result = []
+
+    for a in assignments:
+        c = a.school_class
+        result.append({
+            "class_id": c.id,
+            "parallel": c.parallel,
+            "litera": c.litera,
+            "group": a.group,
+        })
+
+    return result
 
 @router.delete("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
-async def remove_class_teacher(class_id: int, current_user: User):
-    school_class = await get_class(class_id)
+async def remove_class_teacher(current_user: User, class_id: int):
+    school_class = await get_class_obj(class_id)
 
     school_class.teacher_id = None
     await school_class.save()
 
     students = await class_students(school_class)
-    return class_response(school_class, len(students))
+    return await class_response(school_class, len(students))
 
 
 @router.get("/{class_id}/students", response_model=list[ClassStudentResponse])
-@min_perms(ROLE_TEACHER)
-async def get_class_students(class_id: int, current_user: User):
-    school_class = await get_class(class_id)
-    can_manage_class(current_user, school_class)
+@min_perms(settings.TEACHER_ROLE)
+async def get_class_students(current_user: User, class_id: int):
+    school_class = await get_class_obj(class_id)
+    await can_view_class(current_user, school_class)
 
     return await class_students(school_class)
 
 
 @router.post("/{class_id}/students", response_model=StudentInviteResponse)
-@min_perms(ROLE_TEACHER)
-async def add_student(class_id: int, body: AddExistingStudentRequest, current_user: User):
-    school_class = await get_class(class_id)
+@min_perms(settings.TEACHER_ROLE)
+async def add_student(current_user: User, class_id: int, body: AddExistingStudentRequest):
+    school_class = await get_class_obj(class_id)
     student = await User.get_or_none(id=body.user_id)
 
     if not student:
@@ -203,9 +260,9 @@ async def add_student(class_id: int, body: AddExistingStudentRequest, current_us
 
 
 @router.patch("/{class_id}/students/{user_id}/group", response_model=StudentInviteResponse)
-@min_perms(ROLE_TEACHER)
-async def move_group(class_id: int, user_id: int, body: MoveGroupRequest, current_user: User):
-    school_class = await get_class(class_id)
+@min_perms(settings.TEACHER_ROLE)
+async def move_group(current_user: User, class_id: int, user_id: int, body: MoveGroupRequest):
+    school_class = await get_class_obj(class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
@@ -229,15 +286,15 @@ async def move_group(class_id: int, user_id: int, body: MoveGroupRequest, curren
 
 
 @router.post("/{class_id}/students/{user_id}/transfer", response_model=StudentInviteResponse)
-@min_perms(ROLE_TEACHER)
+@min_perms(settings.TEACHER_ROLE)
 async def transfer(
+    current_user: User, 
     class_id: int,
     user_id: int,
-    body: TransferStudentRequest,
-    current_user: User,
+    body: TransferStudentRequest
 ):
-    source_class = await get_class(class_id)
-    target_class = await get_class(body.target_class_id)
+    source_class = await get_class_obj(class_id)
+    target_class = await get_class_obj(body.target_class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
@@ -262,9 +319,9 @@ async def transfer(
 
 
 @router.delete("/{class_id}/students/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
-@min_perms(ROLE_TEACHER)
-async def remove_student(class_id: int, user_id: int, current_user: User):
-    school_class = await get_class(class_id)
+@min_perms(settings.TEACHER_ROLE)
+async def remove_student(current_user: User, class_id: int, user_id: int):
+    school_class = await get_class_obj(class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
@@ -280,10 +337,10 @@ async def remove_student(class_id: int, user_id: int, current_user: User):
 
 
 @router.get("/{class_id}/export")
-@min_perms(ROLE_TEACHER)
-async def export_class(class_id: int, group: int | None = None, current_user: User = None):
-    school_class = await get_class(class_id)
-    can_manage_class(current_user, school_class)
+@min_perms(settings.TEACHER_ROLE)
+async def export_class(class_id: int, current_user: User = None, group: int | None = None):
+    school_class = await get_class_obj(class_id)
+    await can_view_class(current_user, school_class)
 
     students = await class_students(school_class)
 
@@ -321,11 +378,11 @@ async def export_class(class_id: int, group: int | None = None, current_user: Us
 @min_perms(settings.OPERATOR_ROLE)
 async def import_class(
     class_id: int,
+    current_user: User = None, 
     file: UploadFile = File(...),
     dry_run: bool = False,
-    current_user: User = None,
 ):
-    school_class = await get_class(class_id)
+    school_class = await get_class_obj(class_id)
     can_manage_class(current_user, school_class)
 
     if not file.filename.endswith(".xlsx"):

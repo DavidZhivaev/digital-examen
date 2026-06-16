@@ -13,6 +13,7 @@ from rooms.schemas import (
     RoomResponse,
     RoomUpdate,
 )
+from users.models import User
 
 router = APIRouter()
 
@@ -37,6 +38,7 @@ async def health():
 @router.get("/all", response_model=PaginatedRoomsResponse)
 @min_perms(3)
 async def list_rooms(
+    current_user: User,
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
 ):
@@ -63,7 +65,7 @@ async def list_rooms(
 
 @router.get("/{room_id}", response_model=RoomResponse)
 @min_perms(1)
-async def get_room(room_id: int):
+async def get_room(current_user: User, room_id: int):
     room = await Room.get_or_none(id=room_id)
 
     if room is None:
@@ -81,7 +83,7 @@ async def get_room(room_id: int):
     status_code=status.HTTP_201_CREATED,
 )
 @min_perms(3)
-async def create_room(body: RoomCreate):
+async def create_room(current_user: User, body: RoomCreate):
     try:
         room = await Room.create(**body.model_dump())
     except IntegrityError:
@@ -96,6 +98,7 @@ async def create_room(body: RoomCreate):
 @router.patch("/{room_id}", response_model=RoomResponse)
 @min_perms(3)
 async def update_room(
+    current_user: User,
     room_id: int,
     body: RoomUpdate,
 ):
@@ -123,7 +126,7 @@ async def update_room(
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(3)
-async def delete_room(room_id: int):
+async def delete_room(current_user: User, room_id: int):
     room = await Room.get_or_none(id=room_id)
 
     if room is None:

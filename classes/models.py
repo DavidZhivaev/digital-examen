@@ -4,7 +4,7 @@ from tortoise import fields, models
 class SchoolClass(models.Model):
     id = fields.IntField(pk=True)
 
-    teacher = fields.ForeignKeyField(
+    teacher = fields.ForeignKeyField( # под тичером я тут понимаю класс рука, он один такой на один класс, учителей дальше подвязка
         "models.User",
         related_name="homeroom_classes",
         null=True,
@@ -46,3 +46,25 @@ class StudentClassHistory(models.Model):
 
     class Meta:
         table = "student_class_history"
+
+
+class TeacherAssignment(models.Model):
+    id = fields.IntField(pk=True)
+
+    teacher = fields.ForeignKeyField(
+        "models.User",
+        related_name="teaching_assignments",
+        on_delete=fields.CASCADE,
+    )
+
+    school_class = fields.ForeignKeyField(
+        "models.SchoolClass",
+        related_name="assignments",
+        on_delete=fields.CASCADE,
+    )
+
+    group = fields.IntField(null=True)  # 1 / 2 / None (ноне только если весь класс!!!)
+
+    class Meta:
+        table = "teacher_assignments"
+        unique_together = (("teacher", "school_class", "group"),)
