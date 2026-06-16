@@ -16,11 +16,11 @@ class WorkTypeConfig:
     questions: dict[str, str | None]
 
 
-def _config_path() -> Path:
+def config_path() -> Path:
     return Path(settings.WORK_TYPES_PATH)
 
 
-def _parse_work_types(data: dict[str, Any]) -> dict[str, WorkTypeConfig]:
+def parse_work_types(data: dict[str, Any]) -> dict[str, WorkTypeConfig]:
     result: dict[str, WorkTypeConfig] = {}
     for type_id, entry in data.items():
         result[type_id] = WorkTypeConfig(
@@ -33,14 +33,14 @@ def _parse_work_types(data: dict[str, Any]) -> dict[str, WorkTypeConfig]:
 
 @lru_cache
 def load_work_types() -> dict[str, WorkTypeConfig]:
-    path = _config_path()
+    path = config_path()
     if not path.is_file():
         raise RuntimeError(f"Файл типов работ не найден: {path}")
 
     with path.open(encoding="utf-8") as file:
         data = json.load(file)
 
-    return _parse_work_types(data)
+    return parse_work_types(data)
 
 
 def reload_work_types() -> dict[str, WorkTypeConfig]:

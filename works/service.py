@@ -36,20 +36,20 @@ from works.work_types import (
 
 class WorkService:
     @staticmethod
-    def _user_fio(user: User) -> str:
+    def user_fio(user: User) -> str:
         parts = [user.last_name, user.first_name]
         if user.middle_name:
             parts.append(user.middle_name)
         return " ".join(parts)
 
     @classmethod
-    async def _fetch_students(cls, person_ids: list[str]) -> list[User]:
+    async def fetch_students(cls, person_ids: list[str]) -> list[User]:
         students = await User.filter(person_id__in=person_ids)
         await ensure_valid_students(students, person_ids)
         return students
 
     @classmethod
-    async def _fetch_supervisors(cls, person_ids: list[str]) -> list[User]:
+    async def fetch_supervisors(cls, person_ids: list[str]) -> list[User]:
         if not person_ids:
             return []
 
@@ -71,7 +71,7 @@ class WorkService:
         return supervisors
 
     @classmethod
-    async def _validate_rooms(cls, room_ids: list[int]) -> list[Room]:
+    async def validate_rooms(cls, room_ids: list[int]) -> list[Room]:
         if not room_ids:
             return []
 
@@ -86,7 +86,7 @@ class WorkService:
         return rooms
 
     @classmethod
-    async def _notify_global_participants(
+    async def notify_global_participants(
         cls,
         work: Work,
         students: list[User],
@@ -148,9 +148,9 @@ class WorkService:
         room_ids: list[int],
         supervisor_person_ids: list[str],
     ) -> Work:
-        students = await cls._fetch_students(person_ids)
+        students = await cls.fetch_students(person_ids)
         await ensure_teacher_single_class(actor, students)
-        await cls._validate_rooms(room_ids)
+        await cls.validate_rooms(room_ids)
 
         if room_ids and not supervisor_person_ids:
             raise HTTPException(
@@ -180,7 +180,7 @@ class WorkService:
             for supervisor in supervisors:
                 await WorkSupervisor.create(work_id=work.id, user_id=supervisor.id)
 
-        await cls._notify_global_participants(work, students)
+        await cls.notify_global_participants(work, students)
         return work
 
     @classmethod
@@ -202,7 +202,7 @@ class WorkService:
                 detail="Все указанные учащиеся уже добавлены",
             )
 
-        new_students = await cls._fetch_students(new_person_ids)
+        new_students = await cls.fetch_students(new_person_ids)
         all_students = existing_users + new_students
         await ensure_teacher_single_class(actor, all_students)
 
@@ -224,7 +224,7 @@ class WorkService:
 
             await WorkSeating.filter(work_id=work.id).delete()
 
-        await cls._notify_global_participants(work, new_students)
+        await cls.notify_global_participants(work, new_students)
         return work
 
     @classmethod
@@ -402,7 +402,7 @@ class WorkService:
         return json.loads(seating.plan_json)
 
     @classmethod
-    def _find_student_seat(
+    def find_student_seat(
         cls,
         plan: list[dict],
         person_id: str,
@@ -434,7 +434,7 @@ class WorkService:
         from works.permissions import can_view_full_seating
 
         if user.role == ROLE_STUDENT:
-            my_seat = cls._find_student_seat(plan, user.person_id) if plan else None
+            my_seat = cls.find_student_seat(plan, user.person_id) if plan else None
             return {
                 "work_id": work.work_id,
                 "seating_required": seating_required,

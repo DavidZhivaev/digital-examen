@@ -43,14 +43,14 @@ CYRILLIC_TO_LATIN = {
 def transliterate(text: str) -> str:
     return "".join(CYRILLIC_TO_LATIN.get(c, c) for c in text)
 
-def _utcnow() -> datetime:
+def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 def generate_temp_password(length: int = 10) -> str:
     alphabet = string.ascii_letters + string.digits
     return "".join(secrets.choice(alphabet) for _ in range(length))
 
-def _user_to_response(user: User) -> UserResponse:
+def user_response(user: User) -> UserResponse:
     return UserResponse(
         id=user.id,
         person_id=user.person_id,
@@ -78,7 +78,7 @@ async def health():
 @router.get("/me", response_model=UserResponse)
 @min_perms(1)
 async def get_me(current_user: User):
-    return _user_to_response(current_user)
+    return user_response(current_user)
 
 
 @router.patch("/me", response_model=UserResponse)
@@ -92,13 +92,13 @@ async def update_me(body: UserSelfUpdate, current_user: User):
     for field, value in data.items():
         setattr(current_user, field, value)
 
-    current_user.last_do = _utcnow()
+    current_user.last_do = utcnow()
     await current_user.save()
 
     if password_changed:
         await revoke_all_user_sessions(current_user.id)
 
-    return _user_to_response(current_user)
+    return user_response(current_user)
 
 
 @router.get("/", response_model=PaginatedUsersResponse)
@@ -113,7 +113,7 @@ async def list_users(
     users = await User.all().order_by("id").offset(offset).limit(page_size)
 
     return PaginatedUsersResponse(
-        items=[_user_to_response(u) for u in users],
+        items=[user_response(u) for u in users],
         total=total,
         page=page,
         page_size=page_size,
@@ -129,7 +129,7 @@ async def get_user(person_id: UUID, current_user: User):
         raise HTTPException(status_code=404, detail="Пользователь не найден")
 
     validate_admin_can_manage(current_user, user)
-    return _user_to_response(user)
+    return user_response(user)
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -195,7 +195,7 @@ async def create_user(body: UserCreate, current_user: User):
             message=(
                 f"Вам создана учетная запись.\n\n"
                 f"Роль: ученик\n"
-                f"Класс: {body.class_id} {body.class_group}\n\n"
+                f"Класс: {class_label}\n\n"
                 f"Логин: {user.login}\n"
                 f"Временный пароль: {temp_password}\n\n"
                 f"После входа система попросит вас сменить пароль."
@@ -208,7 +208,7 @@ async def create_user(body: UserCreate, current_user: User):
             detail=f"Пользователь создан (Логин: {user.login}), но не удалось отправить письмо: {exc}",
         )
 
-    return _user_to_response(user)
+    return user_response(user)
 
 @router.patch("/{person_id}/role", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
@@ -221,11 +221,11 @@ async def update_user_role(person_id: UUID, body: RoleUpdate, current_user: User
 
     if user.role != body.role:
         user.role = body.role
-        user.last_do = _utcnow()
+        user.last_do = utcnow()
         await user.save(update_fields=["role", "last_do"])
         await revoke_all_user_sessions(user.id)
 
-    return _user_to_response(user)
+    return user_response(user)
 
 
 @router.patch("/{person_id}", response_model=UserResponse)
@@ -253,7 +253,7 @@ async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
     for field, value in data.items():
         setattr(user, field, value)
 
-    user.last_do = _utcnow()
+    user.last_do = utcnow()
     try:
         await user.save()
     except IntegrityError:
@@ -265,7 +265,7 @@ async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
     if password_changed or role_changed:
         await revoke_all_user_sessions(user.id)
 
-    return _user_to_response(user)
+    return user_response(user)
 
 
 @router.post("/{person_id}/force-password-reset")

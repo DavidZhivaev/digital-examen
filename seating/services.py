@@ -9,7 +9,7 @@ from classes.models import SchoolClass, StudentClassHistory
 
 class SeatingService:
     @staticmethod
-    def _get_row_letter(row_idx: int) -> str:
+    def get_row_letter(row_idx: int) -> str:
         letters = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
         string = ""
         base = len(letters)
@@ -181,7 +181,7 @@ class SeatingService:
                     "person_id": s.person_id,
                     "fio": fio,
                     "student_class": cls_name,
-                    "seat": f"{cls._get_row_letter(row)}{col}"
+                    "seat": f"{cls.get_row_letter(row)}{col}"
                 })
                 
             final_seating.append({
