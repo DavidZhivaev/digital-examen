@@ -14,7 +14,7 @@ def is_homeroom_teacher(user: User, school_class: SchoolClass) -> bool:
     return user.role == ROLE_TEACHER and school_class.teacher_id == user.id
 
 
-def ensure_can_manage_class(actor: User, school_class: SchoolClass) -> None:
+def can_manage_class(actor: User, school_class: SchoolClass) -> None:
     if is_operator_or_above(actor):
         return
     if is_homeroom_teacher(actor, school_class):
@@ -25,7 +25,7 @@ def ensure_can_manage_class(actor: User, school_class: SchoolClass) -> None:
     )
 
 
-def ensure_can_manage_student(actor: User, student: User, school_class: SchoolClass) -> None:
+def can_manage_student(actor: User, student: User, school_class: SchoolClass) -> None:
     if is_operator_or_above(actor):
         return
     if is_homeroom_teacher(actor, school_class):

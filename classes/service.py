@@ -5,14 +5,14 @@ from tortoise.transactions import in_transaction
 
 from classes.models import SchoolClass, StudentClassHistory
 from classes.permissions import (
-    ensure_can_manage_class,
-    ensure_can_manage_student,
+    can_manage_class,
+    can_manage_student,
 )
 from core.roles import ROLE_STUDENT, ROLE_TEACHER
 from users.models import User
 
 
-def _utcnow():
+def utcnow():
     return datetime.now(timezone.utc)
 
 
@@ -21,22 +21,22 @@ def validate_group(group: int):
         raise HTTPException(400, "Группа должна быть 1 или 2")
 
 
-async def get_class_or_404(class_id: int) -> SchoolClass:
+async def get_class(class_id: int) -> SchoolClass:
     obj = await SchoolClass.get_or_none(id=class_id)
     if not obj:
         raise HTTPException(404, "Класс не найден")
     return obj
 
 
-async def _close_history(user: User, school_class: SchoolClass):
+async def history_student_get(user: User, school_class: SchoolClass):
     await StudentClassHistory.filter(
         user=user,
         school_class=school_class,
         left_at=None,
-    ).update(left_at=_utcnow())
+    ).update(left_at=utcnow())
 
 
-async def _open_history(user: User, school_class: SchoolClass, group: int):
+async def history_student_create(user: User, school_class: SchoolClass, group: int):
     await StudentClassHistory.create(
         user=user,
         school_class=school_class,
@@ -44,14 +44,14 @@ async def _open_history(user: User, school_class: SchoolClass, group: int):
     )
 
 
-async def add_student_to_class(
+async def add_student_class(
     *,
     actor: User,
     school_class: SchoolClass,
     student: User,
     group: int,
 ):
-    ensure_can_manage_class(actor, school_class)
+    can_manage_class(actor, school_class)
     validate_group(group)
 
     if student.role != ROLE_STUDENT:
@@ -65,7 +65,7 @@ async def add_student_to_class(
         student.class_group = group
         await student.save(update_fields=["class_id", "class_group"])
 
-        await _open_history(student, school_class, group)
+        await history_student_create(student, school_class, group)
 
 
 async def move_student_group(
@@ -75,7 +75,7 @@ async def move_student_group(
     student: User,
     group: int,
 ):
-    ensure_can_manage_class(actor, school_class)
+    can_manage_class(actor, school_class)
     validate_group(group)
 
     if student.class_id != school_class.id:
@@ -85,7 +85,7 @@ async def move_student_group(
         student.class_group = group
         await student.save(update_fields=["class_group"])
 
-        await _open_history(student, school_class, group)
+        await history_student_create(student, school_class, group)
 
 
 async def transfer_student(
@@ -96,37 +96,37 @@ async def transfer_student(
     student: User,
     group: int,
 ):
-    ensure_can_manage_student(actor, student, source_class)
+    can_manage_student(actor, student, source_class)
     validate_group(group)
 
     async with in_transaction():
         if student.class_id == source_class.id:
-            await _close_history(student, source_class)
+            await history_student_get(student, source_class)
 
         student.class_id = target_class.id
         student.class_group = group
         await student.save(update_fields=["class_id", "class_group"])
 
-        await _open_history(student, target_class, group)
+        await history_student_create(student, target_class, group)
 
 
-async def remove_student_from_class(
+async def remove_student_class(
     *,
     actor: User,
     school_class: SchoolClass,
     student: User,
 ):
-    ensure_can_manage_class(actor, school_class)
+    can_manage_class(actor, school_class)
 
     async with in_transaction():
-        await _close_history(student, school_class)
+        await history_student_get(student, school_class)
 
         student.class_id = None
         student.class_group = None
         await student.save(update_fields=["class_id", "class_group"])
 
 
-async def list_class_students(school_class: SchoolClass):
+async def class_students(school_class: SchoolClass):
     users = await User.filter(class_id=school_class.id)
 
     return [
@@ -164,7 +164,7 @@ async def create_class(parallel: int, litera: str, corpus: int):
     )
 
 
-async def update_class_fields(school_class: SchoolClass, data: dict):
+async def update_class(school_class: SchoolClass, data: dict):
     for k, v in data.items():
         if k == "litera":
             v = v.upper()
@@ -179,7 +179,7 @@ async def delete_class(school_class: SchoolClass):
 
     async with in_transaction():
         for s in students:
-            await _close_history(s, school_class)
+            await history_student_get(s, school_class)
             s.class_id = None
             s.class_group = None
             await s.save(update_fields=["class_id", "class_group"])

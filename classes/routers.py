@@ -9,18 +9,18 @@ from fastapi import Query
 from users.routers import transliterate
 from tortoise.transactions import in_transaction
 from classes.service import (
-    add_student_to_class,
+    add_student_class,
     move_student_group,
     transfer_student,
-    remove_student_from_class,
-    list_class_students,
+    remove_student_class,
+    class_students,
     create_class,
-    update_class_fields,
+    update_class,
     delete_class,
-    get_class_or_404,
+    get_class,
 )
 from classes.permissions import (
-    ensure_can_manage_class,
+    can_manage_class,
     is_homeroom_teacher,
     is_operator_or_above,
 )
@@ -45,17 +45,7 @@ from users.models import User
 router = APIRouter()
 
 
-def _ensure_homeroom_or_operator(user: User, school_class: SchoolClass) -> None:
-    if is_operator_or_above(user):
-        return
-    if not is_homeroom_teacher(user, school_class):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Нет доступа",
-        )
-
-
-def _to_class_response(c: SchoolClass, students_count: int = 0) -> ClassResponse:
+def class_response(c: SchoolClass, students_count: int = 0) -> ClassResponse:
     return ClassResponse(
         id=c.id,
         teacher_id=c.teacher_id,
@@ -85,8 +75,8 @@ async def list_classes(current_user: User):
 
     result = []
     for c in classes:
-        students = await list_class_students(c)
-        result.append(_to_class_response(c, len(students)))
+        students = await class_students(c)
+        result.append(class_response(c, len(students)))
 
     return result
 
@@ -99,32 +89,32 @@ async def create_class_endpoint(body: ClassCreate, current_user: User):
         litera=body.litera,
         corpus=body.corpus,
     )
-    return _to_class_response(school_class)
+    return class_response(school_class)
 
 
 @router.get("/{class_id}", response_model=ClassResponse)
 @min_perms(ROLE_TEACHER)
 async def get_class(class_id: int, current_user: User):
-    school_class = await get_class_or_404(class_id)
-    ensure_can_manage_class(current_user, school_class)
+    school_class = await get_class(class_id)
+    can_manage_class(current_user, school_class)
 
-    students = await list_class_students(school_class)
-    return _to_class_response(school_class, len(students))
+    students = await class_students(school_class)
+    return class_response(school_class, len(students))
 
 
 @router.patch("/{class_id}", response_model=ClassResponse)
 @min_perms(ROLE_TEACHER)
 async def update_class(class_id: int, body: ClassUpdate, current_user: User):
-    school_class = await get_class_or_404(class_id)
-    ensure_can_manage_class(current_user, school_class)
+    school_class = await get_class(class_id)
+    can_manage_class(current_user, school_class)
 
-    school_class = await update_class_fields(
+    school_class = await update_class(
         school_class,
         body.model_dump(exclude_unset=True),
     )
 
-    students = await list_class_students(school_class)
-    return _to_class_response(school_class, len(students))
+    students = await class_students(school_class)
+    return class_response(school_class, len(students))
 
 
 @router.delete("/{class_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -134,7 +124,7 @@ async def delete_class_endpoint(
     current_user: User, 
     delete_students: bool = Query(False, description="Удалить ли всех учащихся из этого класса?")
 ):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
     
     async with in_transaction():
         if delete_students:
@@ -149,7 +139,7 @@ async def delete_class_endpoint(
 @router.patch("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
 async def set_class_teacher(class_id: int, body: AssignTeacherRequest, current_user: User):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
 
     teacher = await User.get_or_none(id=body.teacher_id)
     if not teacher:
@@ -161,41 +151,41 @@ async def set_class_teacher(class_id: int, body: AssignTeacherRequest, current_u
     school_class.teacher_id = teacher.id
     await school_class.save()
 
-    students = await list_class_students(school_class)
-    return _to_class_response(school_class, len(students))
+    students = await class_students(school_class)
+    return class_response(school_class, len(students))
 
 
 @router.delete("/{class_id}/teacher", response_model=ClassResponse)
 @min_perms(settings.OPERATOR_ROLE)
 async def remove_class_teacher(class_id: int, current_user: User):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
 
     school_class.teacher_id = None
     await school_class.save()
 
-    students = await list_class_students(school_class)
-    return _to_class_response(school_class, len(students))
+    students = await class_students(school_class)
+    return class_response(school_class, len(students))
 
 
 @router.get("/{class_id}/students", response_model=list[ClassStudentResponse])
 @min_perms(ROLE_TEACHER)
 async def get_class_students(class_id: int, current_user: User):
-    school_class = await get_class_or_404(class_id)
-    ensure_can_manage_class(current_user, school_class)
+    school_class = await get_class(class_id)
+    can_manage_class(current_user, school_class)
 
-    return await list_class_students(school_class)
+    return await class_students(school_class)
 
 
 @router.post("/{class_id}/students", response_model=StudentInviteResponse)
 @min_perms(ROLE_TEACHER)
 async def add_student(class_id: int, body: AddExistingStudentRequest, current_user: User):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
     student = await User.get_or_none(id=body.user_id)
 
     if not student:
         raise HTTPException(404, "Пользователь не найден")
 
-    await add_student_to_class(
+    await add_student_class(
         actor=current_user,
         school_class=school_class,
         student=student,
@@ -215,7 +205,7 @@ async def add_student(class_id: int, body: AddExistingStudentRequest, current_us
 @router.patch("/{class_id}/students/{user_id}/group", response_model=StudentInviteResponse)
 @min_perms(ROLE_TEACHER)
 async def move_group(class_id: int, user_id: int, body: MoveGroupRequest, current_user: User):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
@@ -246,8 +236,8 @@ async def transfer(
     body: TransferStudentRequest,
     current_user: User,
 ):
-    source_class = await get_class_or_404(class_id)
-    target_class = await get_class_or_404(body.target_class_id)
+    source_class = await get_class(class_id)
+    target_class = await get_class(body.target_class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
@@ -274,13 +264,13 @@ async def transfer(
 @router.delete("/{class_id}/students/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 @min_perms(ROLE_TEACHER)
 async def remove_student(class_id: int, user_id: int, current_user: User):
-    school_class = await get_class_or_404(class_id)
+    school_class = await get_class(class_id)
     student = await User.get_or_none(id=user_id)
 
     if not student:
         raise HTTPException(404, "Пользователь не найден")
 
-    await remove_student_from_class(
+    await remove_student_class(
         actor=current_user,
         school_class=school_class,
         student=student,
@@ -292,10 +282,10 @@ async def remove_student(class_id: int, user_id: int, current_user: User):
 @router.get("/{class_id}/export")
 @min_perms(ROLE_TEACHER)
 async def export_class(class_id: int, group: int | None = None, current_user: User = None):
-    school_class = await get_class_or_404(class_id)
-    ensure_can_manage_class(current_user, school_class)
+    school_class = await get_class(class_id)
+    can_manage_class(current_user, school_class)
 
-    students = await list_class_students(school_class)
+    students = await class_students(school_class)
 
     if group:
         students = [s for s in students if s["group"] == group]
@@ -335,8 +325,8 @@ async def import_class(
     dry_run: bool = False,
     current_user: User = None,
 ):
-    school_class = await get_class_or_404(class_id)
-    ensure_can_manage_class(current_user, school_class)
+    school_class = await get_class(class_id)
+    can_manage_class(current_user, school_class)
 
     if not file.filename.endswith(".xlsx"):
         raise HTTPException(400, "Only .xlsx allowed")
@@ -433,7 +423,7 @@ async def import_class(
                 except Exception:
                     pass
 
-            await add_student_to_class(
+            await add_student_class(
                 actor=current_user,
                 school_class=school_class,
                 student=user,
