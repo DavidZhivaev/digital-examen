@@ -3,8 +3,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from works.constants import SUBJECTS
-
 
 class WorkTypeListItem(BaseModel):
     type_id: str
@@ -16,7 +14,7 @@ class WorkTypeListItem(BaseModel):
 class WorkCreate(BaseModel):
     person_ids: list[str] = Field(..., min_length=1, description="person_id учащихся")
     work_type_id: str = Field(..., description="ID типа работы из конфига")
-    subject: str = Field(..., description="math / physics / russian")
+    subject_id: id = Field(..., description="Айди предмета")
     conduct_date: date
     room_ids: list[int] = Field(
         default_factory=list,
@@ -26,13 +24,6 @@ class WorkCreate(BaseModel):
         default_factory=list,
         description="person_id учителей для надзора в аудиториях",
     )
-
-    @field_validator("subject")
-    @classmethod
-    def validate_subject(cls, value: str) -> str:
-        if value not in SUBJECTS:
-            raise ValueError("Предмет: math, physics или russian")
-        return value
 
 
 class WorkParticipantsAdd(BaseModel):

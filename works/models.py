@@ -15,7 +15,11 @@ class Work(models.Model):
         related_name="created_works",
         on_delete=fields.RESTRICT,
     )
-    subject = fields.CharField(max_length=16)
+    subject = fields.ForeignKeyField(
+        "models.Subject",
+        related_name="works",
+        on_delete=fields.RESTRICT,
+    )
     conduct_date = fields.DateField()
     work_type_id = fields.CharField(max_length=64)
     work_type_name = fields.CharField(max_length=255)

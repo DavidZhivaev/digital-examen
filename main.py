@@ -18,6 +18,7 @@ from users.routers import router as users_router
 from rooms.routers import router as rooms_router
 from seating.routers import router as seating_router
 from works.routers import router as works_router
+from subjects.routers import router as subjects_router
 
 setup_logging()
 
@@ -54,6 +55,7 @@ app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
 app.include_router(rooms_router, prefix="/api/classrooms", tags=["classrooms"])
+app.include_router(subjects_router, prefix="/api/subjects", tags=["subjects"])
 app.include_router(seating_router, prefix="/api/seating", tags=["seating"])
 app.include_router(works_router, prefix="/api/works", tags=["works"])
 

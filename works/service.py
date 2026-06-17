@@ -10,6 +10,7 @@ from core.roles import ROLE_STUDENT, ROLE_TEACHER
 from mail.gmail_service import send_notification_email
 from rooms.models import Room
 from seating.services import SeatingService
+from subjects.models import Subject
 from users.models import User
 from works.constants import SUBJECT_LABELS
 from works.models import (
@@ -143,7 +144,7 @@ class WorkService:
         actor: User,
         person_ids: list[str],
         work_type_id: str,
-        subject: str,
+        subject_id: int,
         conduct_date: date,
         room_ids: list[int],
         supervisor_person_ids: list[str],
@@ -161,10 +162,14 @@ class WorkService:
         supervisors = await cls._fetch_supervisors(supervisor_person_ids)
         work_type = get_work_type(work_type_id)
 
+        subject_obj = await Subject.get_or_none(id=subject_id)
+        if not subject_obj:
+            raise HTTPException(status_code=404, detail="Предмет не найден")
+
         async with in_transaction():
             work = await Work.create(
                 created_by_id=actor.id,
-                subject=subject,
+                subject_id=subject_obj.id,
                 conduct_date=conduct_date,
                 work_type_id=work_type.type_id,
                 work_type_name=work_type.name,
@@ -274,7 +279,7 @@ class WorkService:
             "work_id": work.work_id,
             "work_type_id": work.work_type_id,
             "work_type_name": work.work_type_name,
-            "subject": work.subject,
+            "subject_id": work.subject_id,
             "conduct_date": work.conduct_date,
             "has_test_part": has_test_part(questions),
             "questions": questions,

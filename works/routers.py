@@ -3,6 +3,7 @@ from fastapi.responses import StreamingResponse
 
 from core.permissions import min_perms
 from core.roles import ROLE_STUDENT, ROLE_TEACHER
+from subjects.models import Subject
 from users.models import User
 from works.permissions import (
     can_download_seating,
@@ -46,11 +47,16 @@ async def list_work_types_endpoint():
 @router.post("/", response_model=WorkResponse, status_code=status.HTTP_201_CREATED)
 @min_perms(ROLE_TEACHER)
 async def create_work(body: WorkCreate, current_user: User):
+    subject = await Subject.get_or_none(id=body.subject_id)
+
+    if not subject:
+        raise HTTPException(status_code=404, detail="Предмет не найден")
+
     work = await WorkService.create_work(
         actor=current_user,
         person_ids=body.person_ids,
         work_type_id=body.work_type_id,
-        subject=body.subject,
+        subject=subject,
         conduct_date=body.conduct_date,
         room_ids=body.room_ids,
         supervisor_person_ids=body.supervisor_person_ids,
