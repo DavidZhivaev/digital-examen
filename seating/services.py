@@ -1,3 +1,4 @@
+from collections import defaultdict
 import io
 import openpyxl
 from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -30,10 +31,13 @@ class SeatingService:
         return string
 
     @staticmethod
-    async def prepare_data(person_ids: List[str], room_ids: List[int], teacher_ids: List[str]) -> Dict[str, Any]:
+    async def prepare_data(person_ids: List[str], room_ids: List[int], teacher_ids: List[str] | None) -> Dict[str, Any]:
         students = await User.filter(person_id__in=person_ids)
         rooms = await Room.filter(id__in=room_ids)
-        teachers = await User.filter(person_id__in=teacher_ids)
+        if teacher_ids is not None:
+            teachers = await User.filter(person_id__in=teacher_ids)
+        else: 
+            teachers = None
         
         class_ids = list(set([s.class_id for s in students if s.class_id]))
         classes = await SchoolClass.filter(id__in=class_ids)
@@ -59,11 +63,13 @@ class SeatingService:
         
         if total_students > total_capacity:
             return False, "Недостаточно места в аудиториях", total_students, total_capacity
-            
-        if len(data["rooms"]) > len(data["teachers"]):
+             
+        teachers = data.get("teachers") or []
+        use_teachers = len(teachers) > 0
+        if use_teachers and len(data["rooms"]) > len(data["teachers"]):
             return False, f"Недостаточно учителей. Нужно минимум {len(data['rooms'])}, дано {len(data['teachers'])}", total_students, total_capacity
             
-        return True, "Успешно", total_students, total_capacity
+        return True, "ok", total_students, total_capacity
 
     @classmethod
     def generate_seating_plan(cls, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -154,37 +160,37 @@ class SeatingService:
                             
                             if is_same_desk:
                                 if s.class_id == neighbor.class_id:
-                                    penalty += 300000
-                                elif s.last_name == neighbor.last_name:
-                                    penalty += 200000
+                                    penalty += 10**20
+                                elif s.last_name == neighbor.last_name and s.middle_name[:5] == neighbor.middle_name[:5]:
+                                    penalty += 10**8
                                 else:
-                                    penalty += 20000
+                                    penalty += 50
 
                             dist = max(abs(row - nr), abs(col - nc))
 
                             if s.class_id == neighbor.class_id:
                                 if dist == 1:
-                                    penalty += 200000
+                                    penalty += 10**20
                                 elif dist == 2:
-                                    penalty += 80000
+                                    penalty += 10**8
                                 elif dist == 3:
                                     penalty += 20000
                                 
                             s_class_obj = class_map.get(s.class_id)
                             n_class_obj = class_map.get(neighbor.class_id)
                             if s_class_obj and n_class_obj and s_class_obj.corpus == n_class_obj.corpus:
-                                penalty += 50
+                                penalty += 50000
                                 
                             s_hist = history_map.get(s.id, set())
                             n_hist = history_map.get(neighbor.id, set())
                             if s_hist & n_hist:
-                                penalty += 200
+                                penalty += 100000
 
-                        if s.sex is not None:
+                        if s.sex is not None and s.class_id is not None:
                             expected_parity = (row + col) % 2
                             actual_parity = 1 if s.sex == 1 else 0
                             if expected_parity != actual_parity:
-                                penalty += 10
+                                penalty += 1000
 
                         if penalty < min_penalty:
                             min_penalty = penalty
@@ -193,6 +199,12 @@ class SeatingService:
                 if best_seat:
                     grid[best_seat] = s
             
+            grid = cls.optimize_swap(
+                grid,
+                r.rows,
+                r.columns,
+                class_map
+            )
             students_list = []
             for (row, col), s in grid.items():
                 cls_obj = class_map.get(s.class_id)
@@ -215,39 +227,43 @@ class SeatingService:
                 "_raw_students": room_students
             })
 
-        teacher_load = {t.id: 0 for t in teachers}
+        if len(teachers) > 0:
+            teacher_load = {t.id: 0 for t in teachers}
 
-        for item in final_seating:
-            room_students = item["_raw_students"]
+            for item in final_seating:
+                room_students = item["_raw_students"]
 
-            best_teacher = None
-            best_score = float("inf")
+                best_teacher = None
+                best_score = float("inf")
 
-            for t in teachers:
-                own_students_count = 0
+                for t in teachers:
+                    own_students_count = 0
 
-                for s in room_students:
-                    cls_obj = class_map.get(s.class_id)
-                    if cls_obj and cls_obj.teacher_id == t.id:
-                        own_students_count += 1
+                    for s in room_students:
+                        cls_obj = class_map.get(s.class_id)
+                        if cls_obj and cls_obj.teacher_id == t.id:
+                            own_students_count += 1
 
-                score = own_students_count * 8 + teacher_load[t.id] * 20
+                    score = own_students_count * 8 + teacher_load[t.id] * 20
 
-                if score < best_score:
-                    best_score = score
-                    best_teacher = t
+                    if score < best_score:
+                        best_score = score
+                        best_teacher = t
 
-            if best_teacher:
-                t_fio = f"{best_teacher.last_name} {best_teacher.first_name}" + (
-                    f" {best_teacher.middle_name}" if best_teacher.middle_name else ""
-                )
+                if best_teacher:
+                    t_fio = f"{best_teacher.last_name} {best_teacher.first_name}" + (
+                        f" {best_teacher.middle_name}" if best_teacher.middle_name else ""
+                    )
 
-                item["teachers"] = [{
-                    "person_id": best_teacher.person_id,
-                    "fio": t_fio
-                }]
+                    item["teachers"] = [{
+                        "person_id": best_teacher.person_id,
+                        "fio": t_fio
+                    }]
 
-                teacher_load[best_teacher.id] += 1
+                    teacher_load[best_teacher.id] += 1
+        else:
+            for item in final_seating:
+                item["teachers"] = []
 
         return final_seating
 
@@ -256,64 +272,75 @@ class SeatingService:
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Рассадка"
-        
+
         font_header = Font(name="Arial", size=11, bold=True)
         font_body = Font(name="Arial", size=10)
         font_room = Font(name="Arial", size=12, bold=True)
-        
+
         thin_border = Border(
             left=Side(style='thin', color='D9D9D9'),
             right=Side(style='thin', color='D9D9D9'),
             top=Side(style='thin', color='D9D9D9'),
             bottom=Side(style='thin', color='D9D9D9')
         )
-        center_align = Alignment(horizontal="center", vertical="center")
-        
-        headers = ["ФИО", "Класс", "Место"]
+
+        center = Alignment(horizontal="center", vertical="center")
+
+        headers = ["№", "Фамилия", "Имя Отчество", "Класс", "Место"]
         current_row = 1
-        
-        for room_data in seating_plan:
-            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
-            cell = ws.cell(row=current_row, column=1)
-            teachers_str = ", ".join([t['fio'] for t in room_data['teachers']])
-            cell.value = f"Аудитория {room_data['corpus']}-{room_data['number']} ({teachers_str})"
+
+        for room in seating_plan:
+            teachers = room.get("teachers", [])
+            teachers_str = ", ".join(t["fio"] for t in teachers)
+
+            title = f"Корпус {room['corpus']} - Аудитория {room['number']}"
+            if teachers_str:
+                title += f" ({teachers_str})"
+
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=5)
+            cell = ws.cell(row=current_row, column=1, value=title)
             cell.font = font_room
-            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.alignment = center
             ws.row_dimensions[current_row].height = 25
             current_row += 1
-            
-            for col_idx, h in enumerate(headers, 1):
-                c = ws.cell(row=current_row, column=col_idx, value=h)
+
+            for col, h in enumerate(headers, 1):
+                c = ws.cell(row=current_row, column=col, value=h)
                 c.font = font_header
-                c.alignment = center_align
-            ws.row_dimensions[current_row].height = 20
+                c.alignment = center
+
             current_row += 1
-            
-            sorted_students = sorted(room_data["students"], key=lambda x: parse_seat(x["seat"]))
-            for s in sorted_students:
-                ws.cell(row=current_row, column=1, value=s["fio"]).font = font_body
-                ws.cell(row=current_row, column=1).alignment = center_align
 
-                ws.cell(row=current_row, column=2, value=s["student_class"]).font = font_body
-                ws.cell(row=current_row, column=2).alignment = center_align
+            sorted_students = sorted(room["students"], key=lambda x: parse_seat(x["seat"]))
 
-                seat_cell = ws.cell(row=current_row, column=3, value=s["seat"])
-                seat_cell.font = font_body
-                seat_cell.alignment = center_align
-                
-                for col_idx in range(1, 4):
-                    ws.cell(row=current_row, column=col_idx).border = thin_border
-                    
+            for i, s in enumerate(sorted_students, 1):
+                last_name, *rest = s["fio"].split(" ", 1)
+                first_middle = rest[0] if rest else ""
+
+                row_data = [
+                    i,
+                    last_name,
+                    first_middle,
+                    s["student_class"],
+                    s["seat"]
+                ]
+
+                for col, val in enumerate(row_data, 1):
+                    cell = ws.cell(row=current_row, column=col, value=val)
+                    cell.font = font_body
+                    cell.alignment = center
+                    cell.border = thin_border
+
                 ws.row_dimensions[current_row].height = 18
                 current_row += 1
-                
-            current_row += 1 
-            
+
+            current_row += 1
+
         for col in ws.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
+            max_len = max(len(str(c.value or "")) for c in col)
             col_letter = openpyxl.utils.get_column_letter(col[0].column)
             ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
-            
+
         file_stream = io.BytesIO()
         wb.save(file_stream)
         file_stream.seek(0)
@@ -321,9 +348,7 @@ class SeatingService:
     
 
     @staticmethod
-    def calc_class_radii(seating_plan, max_radius=5):
-        from collections import defaultdict
-
+    def calc_class_radius(seating_plan, max_radius=5):
         results = {r: 0 for r in range(1, max_radius + 1)}
 
         for room in seating_plan:
@@ -335,11 +360,13 @@ class SeatingService:
 
             items = list(grid.items())
 
-            for (r1, c1), s1 in items:
-                for (r2, c2), s2 in items:
+            for i in range(len(items)):
+                (r1, c1), s1 = items[i]
+
+                for j in range(i + 1, len(items)):
+                    (r2, c2), s2 = items[j]
+
                     if s1["student_class"] != s2["student_class"]:
-                        continue
-                    if (r1, c1) == (r2, c2):
                         continue
 
                     dist_r = max(abs(r1 - r2), abs(c1 - c2))
@@ -348,5 +375,87 @@ class SeatingService:
                         if dist_r <= radius:
                             results[radius] += 1
                             break
-
         return results
+    
+
+    @staticmethod
+    def optimize_swap(grid, rows, cols, class_map, iterations=2000):
+        import random
+
+        def score(g):
+            total = 0
+
+            items = list(g.items())
+
+            for i in range(len(items)):
+                (r1, c1), s1 = items[i]
+
+                for j in range(i + 1, len(items)):
+                    (r2, c2), s2 = items[j]
+
+                    if s1.class_id != s2.class_id:
+                        continue
+
+                    dist = max(abs(r1 - r2), abs(c1 - c2))
+
+                    if dist == 1:
+                        total += 10**9
+                    elif dist == 2:
+                        total += 80000
+                    elif dist == 3:
+                        total += 20000
+
+            return total
+
+        best = dict(grid)
+        best_score = score(best)
+
+        for _ in range(iterations):
+            if len(best) < 2:
+                break
+
+            (p1, s1), (p2, s2) = random.sample(list(best.items()), 2)
+
+            new_grid = dict(best)
+            new_grid[p1], new_grid[p2] = new_grid[p2], new_grid[p1]
+
+            new_score = score(new_grid)
+
+            if new_score < best_score:
+                best = new_grid
+                best_score = new_score
+
+        return best
+    
+    @staticmethod
+    def check_seating(seating_plan):
+        metrics = {
+            "classes_split": 0,
+            "max_one_class_romm": 0,
+            "avg_class_room_density": 0
+        }
+        class_corpuses = defaultdict(set)
+
+        for room in seating_plan:
+            corpus = room["corpus"]
+
+            for s in room["students"]:
+                class_corpuses[s["student_class"]].add(corpus)
+
+        metrics["classes_split"] = sum(
+            1 for c, corpuses in class_corpuses.items() if len(corpuses) > 1
+        )
+
+        for room in seating_plan:
+            counter = defaultdict(int)
+
+            for s in room["students"]:
+                counter[s["student_class"]] += 1
+
+            if counter:
+                metrics["max_one_class_romm"] = max(
+                    metrics["max_one_class_romm"],
+                    max(counter.values())
+                )
+
+        return metrics
