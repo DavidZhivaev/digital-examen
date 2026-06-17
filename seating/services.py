@@ -7,6 +7,17 @@ from rooms.models import Room
 from classes.models import SchoolClass, StudentClassHistory
 
 
+def parse_seat(seat: str):
+    import re
+
+    row_letter = re.match(r"[А-Я]+", seat).group()
+    col = int(re.search(r"\d+", seat).group())
+
+    letters = "АБВГДЕЖЗИКЛМНОПРСТУФХЦЧШЩЭЮЯ"
+    row = letters.index(row_letter)
+
+    return row, col
+
 class SeatingService:
     @staticmethod
     def get_row_letter(row_idx: int) -> str:
@@ -20,7 +31,7 @@ class SeatingService:
 
     @staticmethod
     async def prepare_data(person_ids: List[str], room_ids: List[int], teacher_ids: List[str]) -> Dict[str, Any]:
-        students = await User.filter(person_id__in=person_ids).prefetch_related("class_id")
+        students = await User.filter(person_id__in=person_ids)
         rooms = await Room.filter(id__in=room_ids)
         teachers = await User.filter(person_id__in=teacher_ids)
         
@@ -142,27 +153,38 @@ class SeatingService:
                             )
                             
                             if is_same_desk:
-                                if s.last_name == neighbor.last_name or (s.middle_name and s.middle_name == neighbor.middle_name):
-                                    penalty += 100000
-                                    
+                                if s.class_id == neighbor.class_id:
+                                    penalty += 300000
+                                elif s.last_name == neighbor.last_name:
+                                    penalty += 200000
+                                else:
+                                    penalty += 20000
+
+                            dist = max(abs(row - nr), abs(col - nc))
+
                             if s.class_id == neighbor.class_id:
-                                penalty += 5000
+                                if dist == 1:
+                                    penalty += 200000
+                                elif dist == 2:
+                                    penalty += 80000
+                                elif dist == 3:
+                                    penalty += 20000
                                 
                             s_class_obj = class_map.get(s.class_id)
                             n_class_obj = class_map.get(neighbor.class_id)
                             if s_class_obj and n_class_obj and s_class_obj.corpus == n_class_obj.corpus:
-                                penalty += 200
+                                penalty += 50
                                 
                             s_hist = history_map.get(s.id, set())
                             n_hist = history_map.get(neighbor.id, set())
                             if s_hist & n_hist:
-                                penalty += 1000
+                                penalty += 200
 
                         if s.sex is not None:
                             expected_parity = (row + col) % 2
                             actual_parity = 1 if s.sex == 1 else 0
                             if expected_parity != actual_parity:
-                                penalty += 50
+                                penalty += 10
 
                         if penalty < min_penalty:
                             min_penalty = penalty
@@ -181,7 +203,7 @@ class SeatingService:
                     "person_id": s.person_id,
                     "fio": fio,
                     "student_class": cls_name,
-                    "seat": f"{cls.get_row_letter(row)}{col}"
+                    "seat": f"{SeatingService.get_row_letter(row)}{col}"
                 })
                 
             final_seating.append({
@@ -193,25 +215,39 @@ class SeatingService:
                 "_raw_students": room_students
             })
 
+        teacher_load = {t.id: 0 for t in teachers}
+
         for item in final_seating:
             room_students = item["_raw_students"]
+
             best_teacher = None
-            min_own_students = float('inf')
-            
+            best_score = float("inf")
+
             for t in teachers:
                 own_students_count = 0
+
                 for s in room_students:
                     cls_obj = class_map.get(s.class_id)
                     if cls_obj and cls_obj.teacher_id == t.id:
                         own_students_count += 1
-                
-                if own_students_count < min_own_students:
-                    min_own_students = own_students_count
+
+                score = own_students_count * 8 + teacher_load[t.id] * 20
+
+                if score < best_score:
+                    best_score = score
                     best_teacher = t
-            
+
             if best_teacher:
-                t_fio = f"{best_teacher.last_name} {best_teacher.first_name}" + (f" {best_teacher.middle_name}" if best_teacher.middle_name else "")
-                item["teachers"].append({"person_id": best_teacher.person_id, "fio": t_fio})
+                t_fio = f"{best_teacher.last_name} {best_teacher.first_name}" + (
+                    f" {best_teacher.middle_name}" if best_teacher.middle_name else ""
+                )
+
+                item["teachers"] = [{
+                    "person_id": best_teacher.person_id,
+                    "fio": t_fio
+                }]
+
+                teacher_load[best_teacher.id] += 1
 
         return final_seating
 
@@ -221,12 +257,9 @@ class SeatingService:
         ws = wb.active
         ws.title = "Рассадка"
         
-        font_header = Font(name="Arial", size=11, bold=True, color="FFFFFF")
+        font_header = Font(name="Arial", size=11, bold=True)
         font_body = Font(name="Arial", size=10)
-        font_room = Font(name="Arial", size=12, bold=True, color="1F497D")
-        
-        fill_header = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
-        fill_room = PatternFill(start_color="E9EDF4", end_color="E9EDF4", fill_type="solid")
+        font_room = Font(name="Arial", size=12, bold=True)
         
         thin_border = Border(
             left=Side(style='thin', color='D9D9D9'),
@@ -234,6 +267,7 @@ class SeatingService:
             top=Side(style='thin', color='D9D9D9'),
             bottom=Side(style='thin', color='D9D9D9')
         )
+        center_align = Alignment(horizontal="center", vertical="center")
         
         headers = ["ФИО", "Класс", "Место"]
         current_row = 1
@@ -242,29 +276,30 @@ class SeatingService:
             ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=3)
             cell = ws.cell(row=current_row, column=1)
             teachers_str = ", ".join([t['fio'] for t in room_data['teachers']])
-            cell.value = f"Корпус {room_data['corpus']} — Аудитория {room_data['number']} (Учителя: {teachers_str})"
+            cell.value = f"Аудитория {room_data['corpus']}-{room_data['number']} ({teachers_str})"
             cell.font = font_room
-            cell.fill = fill_room
-            cell.alignment = Alignment(horizontal="left", vertical="center")
+            cell.alignment = Alignment(horizontal="center", vertical="center")
             ws.row_dimensions[current_row].height = 25
             current_row += 1
             
             for col_idx, h in enumerate(headers, 1):
                 c = ws.cell(row=current_row, column=col_idx, value=h)
                 c.font = font_header
-                c.fill = fill_header
-                c.alignment = Alignment(horizontal="center" if col_idx > 1 else "left")
+                c.alignment = center_align
             ws.row_dimensions[current_row].height = 20
             current_row += 1
             
-            sorted_students = sorted(room_data["students"], key=lambda x: x["fio"])
+            sorted_students = sorted(room_data["students"], key=lambda x: parse_seat(x["seat"]))
             for s in sorted_students:
                 ws.cell(row=current_row, column=1, value=s["fio"]).font = font_body
+                ws.cell(row=current_row, column=1).alignment = center_align
+
                 ws.cell(row=current_row, column=2, value=s["student_class"]).font = font_body
-                
+                ws.cell(row=current_row, column=2).alignment = center_align
+
                 seat_cell = ws.cell(row=current_row, column=3, value=s["seat"])
                 seat_cell.font = font_body
-                seat_cell.alignment = Alignment(horizontal="center")
+                seat_cell.alignment = center_align
                 
                 for col_idx in range(1, 4):
                     ws.cell(row=current_row, column=col_idx).border = thin_border
@@ -283,3 +318,35 @@ class SeatingService:
         wb.save(file_stream)
         file_stream.seek(0)
         return file_stream
+    
+
+    @staticmethod
+    def calc_class_radii(seating_plan, max_radius=5):
+        from collections import defaultdict
+
+        results = {r: 0 for r in range(1, max_radius + 1)}
+
+        for room in seating_plan:
+            grid = {}
+
+            for s in room["students"]:
+                row, col = parse_seat(s["seat"])
+                grid[(row, col)] = s
+
+            items = list(grid.items())
+
+            for (r1, c1), s1 in items:
+                for (r2, c2), s2 in items:
+                    if s1["student_class"] != s2["student_class"]:
+                        continue
+                    if (r1, c1) == (r2, c2):
+                        continue
+
+                    dist_r = max(abs(r1 - r2), abs(c1 - c2))
+
+                    for radius in range(1, max_radius + 1):
+                        if dist_r <= radius:
+                            results[radius] += 1
+                            break
+
+        return results

@@ -227,7 +227,6 @@ async def get_full_class(school_class: SchoolClass):
 
         "students_group_first": students_group_1,
         "students_group_second": students_group_2,
-        "students": students_group_1 + students_group_2,
 
         "teachers": subject_teachers,
         "count_teachers": len(subject_teachers),

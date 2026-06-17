@@ -202,8 +202,6 @@ class FullClassResponse(BaseModel):
     students_group_first: list[StudentSchema]
     students_group_second: list[StudentSchema]
 
-    students: list[StudentSchema]
-
     teachers: list[TeacherSchema]
 
     count_teachers: int
