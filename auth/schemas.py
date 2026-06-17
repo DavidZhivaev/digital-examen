@@ -31,6 +31,10 @@ class RefreshRequest(BaseModel):
         min_length=1,
         max_length=4096,
     )
+    access_token: str = Field(
+        min_length=1,
+        max_length=4096,
+    )
 
 
 class LogoutRequest(BaseModel):

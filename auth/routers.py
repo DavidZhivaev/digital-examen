@@ -179,14 +179,15 @@ async def login(body: LoginRequest, request: Request):
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh(body: RefreshRequest):
     try:
-        payload = decode_token(body.refresh_token)
+        payload_refresh = decode_token(body.refresh_token)
+        payload_access = decode_token(body.access_token)
     except InvalidTokenError:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный токен")
 
-    if payload.get("type") != "refresh":
+    if payload_refresh.get("type") != "refresh" or payload_access.get("type") != "access" or payload_refresh.get("sub") != payload_access.get("sub"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Недействительный тип токена")
 
-    session = await get_valid_session(int(payload["sid"]), body.refresh_token)
+    session = await get_valid_session(int(payload_refresh["sid"]), body.refresh_token)
     user = session.user
 
     new_refresh, expires_at = create_refresh_token(user_id=user.id, session_id=session.id)
