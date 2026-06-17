@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 
 from analytics.routers import router as analytics_router
 from classes.routers import router as classes_router
@@ -62,3 +63,8 @@ init_db(app)
 @app.get("/api/health")
 async def health():
     return {"status": "ok", "app": settings.APP_NAME}
+
+
+if __name__ == "__main__":
+    # dev port
+    uvicorn.run(app, port=5001)

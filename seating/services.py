@@ -1,11 +1,12 @@
 from collections import defaultdict
 import io
 import openpyxl
-from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side, Alignment, Border
 from typing import List, Dict, Any, Tuple
 from users.models import User
 from rooms.models import Room
 from classes.models import SchoolClass, StudentClassHistory
+from openpyxl.utils import get_column_letter
 
 
 def parse_seat(seat: str):
@@ -286,7 +287,7 @@ class SeatingService:
 
         center = Alignment(horizontal="center", vertical="center")
 
-        headers = ["№", "Фамилия", "Имя Отчество", "Класс", "Место"]
+        headers = ["№", "Фамилия", "Имя", "Отчество", "Класс", "Место"]
         current_row = 1
 
         for room in seating_plan:
@@ -297,7 +298,7 @@ class SeatingService:
             if teachers_str:
                 title += f" ({teachers_str})"
 
-            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=5)
+            ws.merge_cells(start_row=current_row, start_column=1, end_row=current_row, end_column=6)
             cell = ws.cell(row=current_row, column=1, value=title)
             cell.font = font_room
             cell.alignment = center
@@ -314,13 +315,16 @@ class SeatingService:
             sorted_students = sorted(room["students"], key=lambda x: parse_seat(x["seat"]))
 
             for i, s in enumerate(sorted_students, 1):
-                last_name, *rest = s["fio"].split(" ", 1)
-                first_middle = rest[0] if rest else ""
+                parts = s["fio"].split()
+                last_name = parts[0] if len(parts) > 0 else ""
+                first_name = parts[1] if len(parts) > 1 else ""
+                middle_name = parts[2] if len(parts) > 2 else ""
 
                 row_data = [
                     i,
                     last_name,
-                    first_middle,
+                    first_name,
+                    middle_name,
                     s["student_class"],
                     s["seat"]
                 ]
@@ -337,9 +341,97 @@ class SeatingService:
             current_row += 1
 
         for col in ws.columns:
-            max_len = max(len(str(c.value or "")) for c in col)
             col_letter = openpyxl.utils.get_column_letter(col[0].column)
-            ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+            if col_letter == "A":
+                ws.column_dimensions[col_letter].width = 5
+                continue
+
+            max_len = max(len(str(c.value or "")) for c in col)
+            ws.column_dimensions[col_letter].width = max(max_len + 2, 10)
+
+        file_stream = io.BytesIO()
+        wb.save(file_stream)
+        file_stream.seek(0)
+        return file_stream
+    
+
+    @classmethod
+    def sorted_generate_excel(cls, seating_plan: List[Dict[str, Any]]) -> io.BytesIO:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Рассадка"
+
+        font_header = Font(name="Arial", size=11, bold=True)
+        font_body = Font(name="Arial", size=10)
+
+        thin_border = Border(
+            left=Side(style='thin', color='D9D9D9'),
+            right=Side(style='thin', color='D9D9D9'),
+            top=Side(style='thin', color='D9D9D9'),
+            bottom=Side(style='thin', color='D9D9D9')
+        )
+
+        center = Alignment(horizontal="center", vertical="center")
+
+        headers = ["№", "Корпус", "Аудитория", "Фамилия", "Имя", "Отчество", "Класс", "Место"]
+
+        ws.append(headers)
+
+        header_row = 1
+
+        for col in range(1, len(headers) + 1):
+            cell = ws.cell(row=header_row, column=col)
+            cell.font = font_header
+            cell.alignment = center
+
+        row_idx = 2
+
+        for room in seating_plan:
+            corpus = room["corpus"]
+            number = room["number"]
+
+            sorted_students = sorted(room["students"], key=lambda x: parse_seat(x["seat"]))
+
+            for i, s in enumerate(sorted_students, 1):
+                parts = s["fio"].split()
+
+                last_name = parts[0] if len(parts) > 0 else ""
+                first_name = parts[1] if len(parts) > 1 else ""
+                middle_name = parts[2] if len(parts) > 2 else ""
+
+                ws.append([
+                    i,
+                    corpus,
+                    number,
+                    last_name,
+                    first_name,
+                    middle_name,
+                    s["student_class"],
+                    s["seat"]
+                ])
+
+                for col in range(1, 9):
+                    cell = ws.cell(row=row_idx, column=col)
+                    cell.font = font_body
+                    cell.alignment = center
+                    cell.border = thin_border
+
+                row_idx += 1
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = f"A1:H{row_idx - 1}"
+        for col in range(1, 9):
+            col_letter = get_column_letter(col)
+
+            if col_letter == "A":
+                ws.column_dimensions[col_letter].width = 5
+            else:
+                max_len = 0
+                for cell in ws[col_letter]:
+                    if cell.value:
+                        max_len = max(max_len, len(str(cell.value)))
+
+                ws.column_dimensions[col_letter].width = max(max_len + 2, 10)
 
         file_stream = io.BytesIO()
         wb.save(file_stream)
@@ -431,8 +523,7 @@ class SeatingService:
     def check_seating(seating_plan):
         metrics = {
             "classes_split": 0,
-            "max_one_class_romm": 0,
-            "avg_class_room_density": 0
+            "max_one_class_romm": 0
         }
         class_corpuses = defaultdict(set)
 
