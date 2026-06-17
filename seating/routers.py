@@ -1,12 +1,15 @@
 from fastapi import APIRouter, HTTPException, status
 from fastapi.responses import StreamingResponse
+from core.permissions import min_perms
 from seating.schemas import SeatingRequest, ValidationResponse, SeatingResponse
 from seating.services import SeatingService
+from users.models import User
 
 router = APIRouter()
 
 @router.post("/validate", response_model=ValidationResponse, summary="Предварительная проверка возможности рассадки")
-async def validate_seating(payload: SeatingRequest):
+@min_perms(2)
+async def validate_seating(current_user: User, payload: SeatingRequest):
     data = await SeatingService.prepare_data(payload.person_ids, payload.room_ids, payload.teacher_ids)
     can_arrange, reason, req, avail = await SeatingService.validate_seating(data)
     return ValidationResponse(
@@ -17,7 +20,8 @@ async def validate_seating(payload: SeatingRequest):
     )
 
 @router.post("/generate/json", response_model=SeatingResponse, summary="Генерация рассадки в формате JSON (Python)")
-async def generate_seating_json(payload: SeatingRequest):
+@min_perms(2)
+async def generate_seating_json(current_user: User, payload: SeatingRequest):
     data = await SeatingService.prepare_data(payload.person_ids, payload.room_ids, payload.teacher_ids)
     can_arrange, reason, _, _ = await SeatingService.validate_seating(data)
     if not can_arrange:
@@ -27,7 +31,8 @@ async def generate_seating_json(payload: SeatingRequest):
     return SeatingResponse(status="success", seating=plan)
 
 @router.post("/generate/excel", summary="Генерация и выгрузка Excel-файла с рассадкой")
-async def generate_seating_excel(payload: SeatingRequest):
+@min_perms(2)
+async def generate_seating_excel(current_user: User, payload: SeatingRequest):
     data = await SeatingService.prepare_data(payload.person_ids, payload.room_ids, payload.teacher_ids)
     can_arrange, reason, _, _ = await SeatingService.validate_seating(data)
     if not can_arrange:
