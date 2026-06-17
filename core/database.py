@@ -14,6 +14,7 @@ def init_db(app):
                 "classes.models",
                 "rooms.models",
                 "works.models",
+                "subjects.models"
             ]
         },
         generate_schemas=True,

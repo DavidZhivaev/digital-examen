@@ -1,5 +1,6 @@
 import logging
 import time
+import uuid
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -9,10 +10,20 @@ from core.security import decode_token
 
 logger = logging.getLogger("api.requests")
 
+SENSITIVE_PATHS = {
+    "/auth/login",
+    "/auth/reset",
+    "/auth/refresh",
+}
+
 def client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
     if request.client:
         return request.client.host
     return "unknown"
+# это чтобы с nginx передавать как раз айпишник,  ане брать тот что уже изменился
 
 
 def extract_auth_context(request: Request) -> dict | None:
@@ -42,6 +53,9 @@ class AuthRequestLoggingMiddleware(BaseHTTPMiddleware):
         auth_context = extract_auth_context(request)
         response = await call_next(request)
 
+        if request.url.path in SENSITIVE_PATHS:
+            return response
+
         if auth_context is not None:
             duration_ms = round((time.perf_counter() - start) * 1000, 2)
             logger.info({
@@ -66,14 +80,19 @@ class AuthRequestLoggingMiddleware(BaseHTTPMiddleware):
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
+        request_id = str(uuid.uuid4())
+        request.state.request_id = request_id
+        response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Cache-Control"] = "no-store"
         response.headers["Strict-Transport-Security"] = (
-            "max-age=31536000; includeSubDomains"
+            "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload"
         )
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
         if not request.url.path.startswith("/docs") and not request.url.path.startswith("/openapi"):
-            response.headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'"
+            response.headers["Content-Security-Policy"] = "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
         return response

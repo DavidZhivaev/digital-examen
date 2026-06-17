@@ -14,7 +14,7 @@ class WorkTypeListItem(BaseModel):
 class WorkCreate(BaseModel):
     person_ids: list[str] = Field(..., min_length=1, description="person_id учащихся")
     work_type_id: str = Field(..., description="ID типа работы из конфига")
-    subject_id: id = Field(..., description="Айди предмета")
+    subject_id: int = Field(..., description="Айди предмета")
     conduct_date: date
     room_ids: list[int] = Field(
         default_factory=list,
