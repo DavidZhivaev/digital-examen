@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/event.json",
+  "title": "EVENT Message",
+  "description": "Security and monitoring event message",
+  "type": "object",
+  "properties": {
+    "type": { "const": "EVENT" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "event_type": {
+          "type": "string",
+          "enum": ["USB_CONNECTED", "USB_DISCONNECTED", "P2P_DETECTED", "TAMPER_DETECTED", "PROCESS_KILLED", "AGENT_OFFLINE", "POLICY_VIOLATION", "GPU_THRESHOLD"],
+          "description": "Type of event"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+          "description": "Event severity level"
+        },
+        "details": {
+          "oneOf": [
+            {
+              "type": "object",
+              "title": "UsbEventDetails",
+              "properties": {
+                "vendor_id": { "type": "integer" },
+                "product_id": { "type": "integer" },
+                "device_class": { "type": "string" },
+                "serial": { "type": "string" }
+              }
+            },
+            {
+              "type": "object",
+              "title": "P2pEventDetails",
+              "properties": {
+                "local_ip": { "type": "string", "format": "ipv4" },
+                "remote_ip": { "type": "string", "format": "ipv4" },
+                "local_port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+                "remote_port": { "type": "integer", "minimum": 0, "maximum": 65535 },
+                "protocol": { "type": "string", "enum": ["TCP", "UDP"] }
+              }
+            },
+            {
+              "type": "object",
+              "title": "ProcessEventDetails",
+              "properties": {
+                "pid": { "type": "integer" },
+                "process_name": { "type": "string" },
+                "reason": { "type": "string" }
+              }
+            },
+            {
+              "type": "object",
+              "title": "TamperEventDetails",
+              "properties": {
+                "expected_hash": { "type": "string" },
+                "actual_hash": { "type": "string" },
+                "file_path": { "type": "string" }
+              }
+            },
+            { "type": "string" }
+          ],
+          "description": "Event-specific details"
+        }
+      },
+      "required": ["event_type", "severity", "details"]
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}
