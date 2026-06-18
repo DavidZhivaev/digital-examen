@@ -2,6 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from core.deps import get_current_user
+from core.permissions import min_perms
 from subjects.models import Subject
 import os
 import shutil
@@ -11,7 +12,7 @@ from pathlib import Path
 from marker.convert import convert_single_pdf
 from marker.models import load_all_models
 from tasks.audit import log_audit
-from tasks.permissions import assert_subject_access, can_create_bank, can_create_task, can_moderate_subject, min_perms
+from tasks.permissions import assert_subject_access, can_create_bank, can_create_task, can_moderate_subject
 from core.config import settings
 from tasks.schemas import TaskBankCreate, TaskCreate, TaskMove, TaskPositionUpdate
 from tasks.service import TaskBankService, TaskVisibilityService, convert_docx_to_math_text, convert_pdf_to_math_text, reorder_positions

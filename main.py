@@ -19,6 +19,8 @@ from rooms.routers import router as rooms_router
 from seating.routers import router as seating_router
 from works.routers import router as works_router
 from subjects.routers import router as subjects_router
+from tasks.routers import router as tasks_router
+from files.routers import router as files_router
 
 setup_logging()
 
@@ -52,6 +54,8 @@ app.add_middleware(RateLimitMiddleware)
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(users_router, prefix="/api/users", tags=["users"])
 app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
+app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(files_router, prefix="/api/files", tags=["files"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
 app.include_router(rooms_router, prefix="/api/classrooms", tags=["classrooms"])
