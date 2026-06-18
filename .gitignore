@@ -39,3 +39,13 @@
 
 # debug information files
 *.dwo
+
+# Claude Code
+.claudecode/
+
+# Documentation
+docs/
+*.md
+
+# macOS
+.DS_Store
