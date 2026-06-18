@@ -84,7 +84,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         request.state.request_id = request_id
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "no-referrer"
         response.headers["Cache-Control"] = "no-store"
         response.headers["Strict-Transport-Security"] = (
@@ -93,6 +92,4 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
         response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
-        if not request.url.path.startswith("/docs") and not request.url.path.startswith("/openapi"):
-            response.headers["Content-Security-Policy"] = "Content-Security-Policy: default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
         return response

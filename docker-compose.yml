@@ -4,7 +4,7 @@ services:
     container_name: digital-examen-api
     restart: unless-stopped
     ports:
-      - "${API_PORT:-8000}:8000"
+      - "${API_PORT:-1580}:1580"
     env_file:
       - .env
     environment:
@@ -26,3 +26,18 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+  db:
+    image: postgres:16
+    container_name: digital-examen-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: exam
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
