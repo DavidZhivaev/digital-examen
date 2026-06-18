@@ -494,4 +494,4 @@ class WorkService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Рассадка ещё не сгенерирована",
             )
-        return SeatingService.generate_excel(plan)
+        return SeatingService.sorted_generate_excel(plan)
