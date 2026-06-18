@@ -70,6 +70,20 @@ def user_response(user: User) -> UserResponse:
         last_do=user.last_do,
     )
 
+def generate_temp_password(length: int) -> str:
+    alphabet = string.ascii_letters + string.digits + string.punctuation
+
+    password = [
+        secrets.choice(string.ascii_lowercase),
+        secrets.choice(string.ascii_uppercase),
+        secrets.choice(string.digits),
+        secrets.choice(string.punctuation),
+    ]
+
+    password += [secrets.choice(alphabet) for _ in range(length - 4)]
+    secrets.SystemRandom().shuffle(password)
+
+    return "".join(password)
 
 @router.get("/health")
 async def health():
@@ -234,9 +248,9 @@ async def create_user(body: UserCreate, current_user: User):
 
     data["login"] = generated_login
 
-    temp_password = generate_temp_password()
+    temp_password = generate_temp_password(12)
     data["password_hash"] = hash_password(temp_password)
-    data["must_set_password"] = True
+    data["must_set_password"] = False
 
     try:
         user = await User.create(**data)
@@ -267,7 +281,7 @@ async def create_user(body: UserCreate, current_user: User):
                 f"Логин: {user.login}\n"
                 f"Создал: {current_user.login}"
                 f"Временный пароль: {temp_password}\n\n"
-                f"После входа система попросит сменить пароль."
+                f"Рекомендуем изменить временный пароль! Ссылку для смены прикрепили к письму."
             ),
             link=link
         )
