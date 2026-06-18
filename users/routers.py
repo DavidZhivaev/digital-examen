@@ -126,6 +126,60 @@ async def list_users(
     )
 
 
+@router.get("/roles")
+@min_perms(1)
+async def get_roles(current_user: User):
+    return [
+        {
+            "role_id": 1,
+            "name": "Учащийся"
+        },
+        {
+            "role_id": 2,
+            "name": "Учитель"
+        },
+        {
+            "role_id": 3,
+            "name": "Оператор"
+        },
+        {
+            "role_id": 4,
+            "name": "Администратор"
+        }
+    ]
+
+@router.get("/subsystems")
+@min_perms(1)
+async def get_me(current_user: User):
+    subsystems = []
+    k = 1
+    for name in ["Работы", "Банк задач", "Настройки", "Контингент", "Рассадка", "Аудитории", "Обработка ЭМ", "Аналитика"]:
+        if k < 4:
+            subsystems.append({
+                "name": name,
+                "id": k,
+                "min_perms": 1 
+            })
+        elif k < 6:
+            subsystems.append({
+                "name": name,
+                "id": k,
+                "min_perms": 2
+            })
+        else:
+            subsystems.append({
+                "name": name,
+                "id": k,
+                "min_perms": 3
+            })
+        k += 1
+
+    return {
+        "subsystems": subsystems,
+        "user_subsystems": [i for i in subsystems if current_user.role >= i["min_perms"]]
+    }
+
+
 @router.get("/{person_id}", response_model=UserResponse)
 @min_perms(settings.ADMIN_ROLE)
 async def get_user(person_id: UUID, current_user: User):
