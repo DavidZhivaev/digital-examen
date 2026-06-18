@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/ping.json",
+  "title": "PING Message",
+  "description": "Connection health check message from relay to agent",
+  "type": "object",
+  "properties": {
+    "type": { "const": "PING" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Sequence number for RTT calculation"
+        },
+        "sent_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "PING send timestamp"
+        }
+      },
+      "required": ["sequence", "sent_at"]
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}

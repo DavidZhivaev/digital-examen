@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/register.json",
+  "title": "REGISTER Message",
+  "description": "Agent registration message sent when connecting to relay",
+  "type": "object",
+  "properties": {
+    "type": { "const": "REGISTER" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "machine_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique machine identifier"
+        },
+        "building_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Building identifier"
+        },
+        "room_id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Room identifier"
+        },
+        "seat_id": {
+          "type": "string",
+          "description": "Seat identifier (optional)"
+        },
+        "agent_version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agent software version"
+        },
+        "hw_fingerprint": {
+          "type": "string",
+          "minLength": 64,
+          "maxLength": 64,
+          "pattern": "^[0-9a-fA-F]{64}$",
+          "description": "Hardware fingerprint: SHA-256(CPU + MB + MAC)"
+        },
+        "os_version": {
+          "type": "string",
+          "description": "Operating system version"
+        }
+      },
+      "required": ["machine_id", "building_id", "room_id", "agent_version", "hw_fingerprint"]
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}

@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/task_result.json",
+  "title": "TASK_RESULT Message",
+  "description": "Task execution result message",
+  "type": "object",
+  "properties": {
+    "type": { "const": "TASK_RESULT" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "task_id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Original task ID"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["OK", "ERROR", "TIMEOUT"],
+          "description": "Task execution status"
+        },
+        "output": {
+          "type": "string",
+          "description": "Command output or result data"
+        },
+        "error_code": {
+          "type": "integer",
+          "description": "Error code if status is ERROR"
+        },
+        "execution_time_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Execution duration in milliseconds"
+        }
+      },
+      "required": ["task_id", "status"],
+      "if": {
+        "properties": { "status": { "const": "ERROR" } }
+      },
+      "then": {
+        "required": ["error_code"]
+      }
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}

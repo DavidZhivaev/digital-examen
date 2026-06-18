@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ukk.school.local/protocol/v1/screenshot.json",
+  "title": "SCREENSHOT Message",
+  "description": "Screen capture data message",
+  "type": "object",
+  "properties": {
+    "type": { "const": "SCREENSHOT" },
+    "message_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "payload": {
+      "type": "object",
+      "properties": {
+        "changed": {
+          "type": "boolean",
+          "description": "True if screen content changed since last capture"
+        },
+        "image_data": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "description": "zstd-compressed JPEG image data (base64 encoded)"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Image width in pixels"
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Image height in pixels"
+        },
+        "phash": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Perceptual hash for change detection"
+        }
+      },
+      "required": ["changed"],
+      "if": {
+        "properties": { "changed": { "const": true } }
+      },
+      "then": {
+        "required": ["image_data", "width", "height"]
+      }
+    }
+  },
+  "required": ["type", "message_id", "timestamp", "payload"]
+}
