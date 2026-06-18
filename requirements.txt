@@ -11,4 +11,4 @@ openpyxl>=3.1.0
 python-multipart>=0.0.12,<1.0.0
 python-docx==1.1.2
 lxml==5.2.2
-marker-pdf==0.2.0
+marker-pdf>=0.2.1,<1.0.0
