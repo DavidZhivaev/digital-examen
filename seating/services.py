@@ -31,14 +31,58 @@ class SeatingService:
             string = letters[remainder] + string
         return string
 
+    @classmethod
+    async def validate_seating(cls, data: Dict[str, Any]) -> Tuple[bool, str, int, int]:
+        total_students = len(data["students"])
+        total_capacity = sum([r.rows * r.columns for r in data["rooms"]])
+        
+        if total_students > total_capacity:
+            return False, "Недостаточно места в аудиториях", total_students, total_capacity
+             
+        teachers = data.get("teachers") or []
+        use_teachers = len(teachers) > 0
+        if use_teachers and len(data["rooms"]) > len(data["teachers"]):
+            return False, f"Недостаточно учителей. Нужно минимум {len(data['rooms'])}, дано {len(data['teachers'])}", total_students, total_capacity
+            
+        return True, "ok", total_students, total_capacity
+
+    @classmethod
+    async def validate_seating(cls, data: Dict[str, Any]) -> Tuple[bool, str, int, int]:
+        total_students = len(data["students"])
+        total_capacity = sum([r.rows * r.columns for r in data["rooms"]])
+        
+        if total_students > total_capacity:
+            return False, "Недостаточно места в аудиториях", total_students, total_capacity
+             
+        teachers = data.get("teachers") or []
+        use_teachers = len(teachers) > 0
+        if use_teachers and len(data["rooms"]) > len(data["teachers"]):
+            return False, f"Недостаточно учителей. Нужно минимум {len(data['rooms'])}, дано {len(data['teachers'])}", total_students, total_capacity
+            
+        return True, "ok", total_students, total_capacity
+
     @staticmethod
-    async def prepare_data(person_ids: List[str], room_ids: List[int], teacher_ids: List[str] | None) -> Dict[str, Any]:
+    async def prepare_data(
+        person_ids: List[str], 
+        room_ids: List[int], 
+        teacher_ids: List[str] | None, 
+        ratings: List[float] | None = None
+    ) -> Dict[str, Any]:
         students = await User.filter(person_id__in=person_ids)
         rooms = await Room.filter(id__in=room_ids)
         if teacher_ids is not None:
             teachers = await User.filter(person_id__in=teacher_ids)
         else: 
             teachers = None
+        
+        rating_map = {}
+        if ratings:
+            for i, pid in enumerate(person_ids):
+                if i < len(ratings):
+                    rating_map[pid] = ratings[i]
+                    
+        for s in students:
+            s.rating = rating_map.get(s.person_id, 0.0)
         
         class_ids = list(set([s.class_id for s in students if s.class_id]))
         classes = await SchoolClass.filter(id__in=class_ids)
@@ -56,21 +100,6 @@ class SeatingService:
             "class_map": class_map,
             "history_map": history_map
         }
-
-    @classmethod
-    async def validate_seating(cls, data: Dict[str, Any]) -> Tuple[bool, str, int, int]:
-        total_students = len(data["students"])
-        total_capacity = sum([r.rows * r.columns for r in data["rooms"]])
-        
-        if total_students > total_capacity:
-            return False, "Недостаточно места в аудиториях", total_students, total_capacity
-             
-        teachers = data.get("teachers") or []
-        use_teachers = len(teachers) > 0
-        if use_teachers and len(data["rooms"]) > len(data["teachers"]):
-            return False, f"Недостаточно учителей. Нужно минимум {len(data['rooms'])}, дано {len(data['teachers'])}", total_students, total_capacity
-            
-        return True, "ok", total_students, total_capacity
 
     @classmethod
     def generate_seating_plan(cls, data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -116,18 +145,35 @@ class SeatingService:
             if not corp_rooms:
                 corp_rooms = rooms
                 
+            cls_students_sorted = sorted(
+                cls_students, 
+                key=lambda x: getattr(x, 'rating', 0.0), 
+                reverse=True
+            )
+            
+            rem_caps = {r.id: (r.rows * r.columns) - len(room_assignments[r.id]) for r in corp_rooms}
+            quotas = {r.id: 0 for r in corp_rooms}
+            students_to_distribute = len(cls_students_sorted)
+            
             idx = 0
-            for s in cls_students:
-                attempts = 0
-                while attempts < len(corp_rooms):
-                    r = corp_rooms[idx % len(corp_rooms)]
-                    max_cap = r.rows * r.columns
-                    if len(room_assignments[r.id]) < max_cap:
-                        room_assignments[r.id].append(s)
-                        idx += 1
-                        break
-                    idx += 1
-                    attempts += 1
+            while students_to_distribute > 0:
+                if sum(rem_caps.values()) == 0:
+                    break
+                    
+                r = corp_rooms[idx % len(corp_rooms)]
+                if rem_caps[r.id] > 0:
+                    quotas[r.id] += 1
+                    rem_caps[r.id] -= 1
+                    students_to_distribute -= 1
+                idx += 1
+            
+            student_idx = 0
+            for r in corp_rooms:
+                q = quotas[r.id]
+                for _ in range(q):
+                    if student_idx < len(cls_students_sorted):
+                        room_assignments[r.id].append(cls_students_sorted[student_idx])
+                        student_idx += 1
 
         final_seating = []
         for r in rooms:
@@ -171,9 +217,9 @@ class SeatingService:
 
                             if s.class_id == neighbor.class_id:
                                 if dist == 1:
-                                    penalty += 10**20
+                                    penalty += 10**35
                                 elif dist == 2:
-                                    penalty += 10**8
+                                    penalty += 10**19
                                 elif dist == 3:
                                     penalty += 20000
                                 
@@ -267,6 +313,7 @@ class SeatingService:
                 item["teachers"] = []
 
         return final_seating
+
 
     @classmethod
     def generate_excel(cls, seating_plan: List[Dict[str, Any]]) -> io.BytesIO:
