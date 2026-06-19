@@ -2,7 +2,7 @@ import hashlib
 import uuid
 from fastapi import HTTPException
 from tortoise.transactions import in_transaction
-from tasks.models import TaskBank, TaskPosition, Task
+from tasks.models import TaskBank, TaskPosition, Task, TaskReview, TaskRevision
 import os
 import shutil
 from docx import Document
@@ -15,6 +15,35 @@ def stable_hash(bank_id: int, task_id: uuid.UUID) -> int:
     key = f"{bank_id}:{str(task_id)}"
     return int(hashlib.md5(key.encode()).hexdigest(), 16)
 
+async def create_revision(
+    task: Task,
+    user
+):
+    await TaskRevision.create(
+        task=task,
+        version=task.version,
+        text=task.text,
+        solution=task.solution,
+        answer=task.answer,
+        image_url=task.image_url,
+        image_scale=task.image_scale,
+        image_position=task.image_position,
+        status=task.status,
+        changed_by=user
+    )
+
+async def create_review(
+    task,
+    moderator,
+    action,
+    comment
+):
+    await TaskReview.create(
+        task=task,
+        moderator=moderator,
+        action=action,
+        comment=comment
+    )
 
 async def reorder_positions(bank: TaskBank, new_order: list[int]):
     async with in_transaction():

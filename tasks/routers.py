@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
@@ -15,10 +16,10 @@ from tasks.audit import log_audit
 from tasks.permissions import assert_subject_access, can_create_bank, can_create_task, can_moderate_subject
 from core.config import settings
 from tasks.schemas import TaskBankCreate, TaskCreate, TaskMove, TaskPositionUpdate
-from tasks.service import TaskBankService, TaskVisibilityService, convert_docx_to_math_text, convert_pdf_to_math_text, reorder_positions
+from tasks.service import TaskBankService, TaskVisibilityService, convert_docx_to_math_text, convert_pdf_to_math_text, create_review, create_revision, reorder_positions
 from users.models import User
 
-from tasks.models import TaskBank, TaskPosition, Task
+from tasks.models import TaskBank, TaskPosition, Task, TaskReview, TaskRevision
 from tasks.schemas import *
 
 router = APIRouter()
@@ -110,7 +111,10 @@ async def get_bank(bank_id: int, current_user: User):
 
     positions = []
     for p in await bank.positions.all().order_by("order"):
-        tasks = await Task.filter(position=p)
+        tasks = await Task.filter(
+            position=p,
+            is_deleted=False
+        )
         
         serialized_tasks = TaskVisibilityService.filter_and_serialize(
             tasks, current_user, bank, is_op, is_adm, is_tech
@@ -136,7 +140,6 @@ async def get_bank(bank_id: int, current_user: User):
 @router.post("/banks/{bank_id}/positions/reorder")
 @min_perms(settings.OPERATOR_ROLE)
 async def reorder(bank_id: int, order: list[int], current_user: User):
-
     bank = await TaskBank.get(id=bank_id).prefetch_related("subject")
     await assert_subject_access(current_user, bank.subject)
 
@@ -146,7 +149,6 @@ async def reorder(bank_id: int, order: list[int], current_user: User):
 @router.patch("/positions/{position_id}")
 @min_perms(settings.OPERATOR_ROLE)
 async def update_position(position_id: int, body: TaskPositionUpdate):
-
     pos = await TaskPosition.get(id=position_id)
 
     for k, v in body.model_dump(exclude_unset=True).items():
@@ -209,18 +211,24 @@ async def delete_task(task_id: uuid.UUID, current_user: User):
     bank_id = task.position.bank_id
     subject_id = subject.id
 
-    await task.delete()
+    task.is_deleted = True
+    task.deleted_at = datetime.now(timezone.utc)
+    task.deleted_by = current_user
+
+    await task.save()
 
     log_audit(
         user_id=current_user.id,
         user_role=current_user.role,
-        action="delete",
+        action="soft_delete",
         task_id=task_id,
         bank_id=bank_id,
         subject_id=subject_id
     )
 
-    return {"status": "deleted"}
+    return {
+        "status": "deleted"
+    }
 
 
 @router.patch("/banks/{bank_id}")
@@ -255,14 +263,21 @@ async def update_task(task_id: uuid.UUID, body: TaskCreate, current_user: User):
 
     if not is_moderator and task.author_id != current_user.id:
         raise HTTPException(403, "Вы не являетесь автором этой задачи")
+    
+    await create_revision(
+        task,
+        current_user
+    )
 
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(task, k, v)
 
     old_status = task.status
+
     if not is_moderator:
         task.status = 1
 
+    task.version += 1
     await task.save()
 
     log_audit(
@@ -282,26 +297,59 @@ async def update_task(task_id: uuid.UUID, body: TaskCreate, current_user: User):
 @min_perms(2)
 async def submit_task(task_id: uuid.UUID, current_user: User):
     task = await Task.get(id=task_id)
+    subject = task.position.bank.subject
 
     if task.author_id != current_user.id:
         raise HTTPException(403)
 
-    task.status = 1
-    await task.save()
+    if not await can_moderate_subject(current_user, subject):
+        task.status = 1
+        await task.save()
 
-    return {"status": "pending"}
+        return {"status": "pending"}
+    else:
+        await create_revision(
+            task,
+            current_user
+        )
+
+        task.status = 2
+        task.version += 1
+
+        await task.save()
+
+        log_audit(
+            user_id=current_user.id,
+            user_role=current_user.role,
+            action="approve",
+            task_id=task.id,
+            bank_id=task.position.bank_id,
+            subject_id=subject.id
+        )
+
+        return {"status": "approved"}
 
 
 @router.post("/tasks/{task_id}/approve")
 @min_perms(2)
-async def approve_task(task_id: uuid.UUID, current_user: User):
+async def approve_task(
+    task_id: uuid.UUID,
+    current_user: User
+):
     task = await Task.get(id=task_id).prefetch_related("position__bank__subject")
     subject = task.position.bank.subject
 
     if not await can_moderate_subject(current_user, subject):
         raise HTTPException(403)
 
+    await create_revision(
+        task,
+        current_user
+    )
+
     task.status = 2
+    task.version += 1
+
     await task.save()
 
     log_audit(
@@ -318,15 +366,32 @@ async def approve_task(task_id: uuid.UUID, current_user: User):
 
 @router.post("/tasks/{task_id}/reject")
 @min_perms(2)
-async def reject_task(task_id: uuid.UUID, current_user: User):
+async def reject_task(
+    task_id: uuid.UUID,
+    body: TaskReviewCreate,
+    current_user: User
+):
     task = await Task.get(id=task_id).prefetch_related("position__bank__subject")
     subject = task.position.bank.subject
 
     if not await can_moderate_subject(current_user, subject):
         raise HTTPException(403)
 
+    await create_revision(
+        task,
+        current_user
+    )
+
     task.status = 3
+    task.version += 1
+
     await task.save()
+    await create_review(
+        task,
+        current_user,
+        "reject",
+        body.comment
+    )
 
     log_audit(
         user_id=current_user.id,
@@ -373,3 +438,322 @@ async def digitize_document(file: UploadFile = File(...), current_user: User = D
     finally:
         if temp_file_path.exists():
             os.remove(temp_file_path)
+
+
+@router.post("/tasks/{task_id}/restore")
+@min_perms(2)
+async def restore_task(
+    task_id: uuid.UUID,
+    current_user: User
+):
+    task = await Task.get(id=task_id).prefetch_related(
+        "position__bank__subject"
+    )
+
+    subject = task.position.bank.subject
+
+    await assert_subject_access(
+        current_user,
+        subject
+    )
+
+    is_op = current_user.role >= settings.OPERATOR_ROLE
+    is_adm = await subject.admins.filter(
+        id=current_user.id
+    ).exists()
+
+    if not (is_op or is_adm):
+        raise HTTPException(
+            403,
+            "Недостаточно прав"
+        )
+
+    if not task.is_deleted:
+        raise HTTPException(
+            400,
+            "Задача не удалена"
+        )
+
+    task.is_deleted = False
+    task.deleted_at = None
+    task.deleted_by = None
+
+    await task.save()
+
+    log_audit(
+        user_id=current_user.id,
+        user_role=current_user.role,
+        action="restore",
+        task_id=task.id,
+        bank_id=task.position.bank_id,
+        subject_id=subject.id
+    )
+
+    return {
+        "status": "restored"
+    }
+
+
+@router.get("/tasks/deleted")
+@min_perms(settings.OPERATOR_ROLE)
+async def deleted_tasks(current_user: User):
+    return await Task.filter(
+        is_deleted=True
+    )
+
+
+@router.get("/tasks/{task_id}/history")
+@min_perms(1)
+async def task_history(task_id: uuid.UUID, current_user: User):
+    return await TaskRevision.filter(
+        task_id=task_id
+    ).order_by(
+        "-version"
+    )
+
+
+@router.get("/tasks/{task_id}/history/{version}")
+@min_perms(1)
+async def task_version(task_id: uuid.UUID, version: int, current_user: User):
+    return await TaskRevision.get(
+        task_id=task_id,
+        version=version
+    )
+
+
+@router.post("/tasks/{task_id}/restore/{version}")
+@min_perms(2)
+async def restore_version(task_id: uuid.UUID, version: int, current_user: User):
+    task = await Task.get(
+        id=task_id
+    )
+
+    rev = await TaskRevision.get(
+        task_id=task_id,
+        version=version
+    )
+
+    await create_revision(
+        task,
+        current_user
+    )
+
+    task.text = rev.text
+    task.solution = rev.solution
+    task.answer = rev.answer
+
+    task.image_url = rev.image_url
+    task.image_scale = rev.image_scale
+    task.image_position = rev.image_position
+
+    task.status = rev.status
+
+    task.version += 1
+
+    await task.save()
+
+    log_audit(
+        user_id=current_user.id,
+        user_role=current_user.role,
+        action="restore_version",
+        task_id=task.id,
+        bank_id=task.position_id,
+        details={
+            "restored_version": version,
+            "new_version": task.version
+        }
+    )
+
+    return {
+        "status": "ok"
+    }
+
+
+@router.post("/tasks/{task_id}/request_changes")
+@min_perms(2)
+async def request_changes(
+    task_id: uuid.UUID,
+    body: TaskReviewCreate,
+    current_user: User
+):
+    task = await Task.get(
+        id=task_id
+    ).prefetch_related(
+        "position__bank__subject"
+    )
+
+    subject = task.position.bank.subject
+
+    if not await can_moderate_subject(
+        current_user,
+        subject
+    ):
+        raise HTTPException(403)
+
+    await create_revision(
+        task,
+        current_user
+    )
+
+    task.status = 1
+    task.version += 1
+
+    await task.save()
+
+    await create_review(
+        task,
+        current_user,
+        "request_changes",
+        body.comment
+    )
+
+    log_audit(
+        user_id=current_user.id,
+        user_role=current_user.role,
+        action="request_changes",
+        task_id=task.id,
+        bank_id=task.position.bank_id,
+        subject_id=subject.id
+    )
+
+    return {
+        "status": "changes_requested"
+    }
+
+
+@router.get("/tasks/{task_id}/reviews")
+@min_perms(1)
+async def task_reviews(task_id: uuid.UUID):
+    return await TaskReview.filter(
+        task_id=task_id
+    ).order_by(
+        "-created_at"
+    )
+
+
+@router.get("/banks/{bank_id}/positions")
+@min_perms(1)
+async def get_positions(bank_id: int, current_user: User):
+    bank = await TaskBank.get(id=bank_id).prefetch_related("subject")
+
+    await assert_subject_access(current_user, bank.subject)
+
+    positions = await TaskPosition.filter(
+        bank_id=bank_id
+    ).order_by("order")
+
+    return [
+        {
+            "id": p.id,
+            "order": p.order,
+            "min_score": p.min_score,
+            "max_score": p.max_score
+        }
+        for p in positions
+    ]
+
+
+@router.get("/positions/{position_id}/tasks")
+@min_perms(1)
+async def get_position_tasks(
+    position_id: int,
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    position = await TaskPosition.get(
+        id=position_id
+    ).prefetch_related("bank__subject")
+
+    subject = position.bank.subject
+
+    await assert_subject_access(current_user, subject)
+
+    offset = (page - 1) * limit
+
+    base_query = Task.filter(
+        position_id=position_id,
+        is_deleted=False
+    )
+
+    total = await base_query.count()
+
+    tasks = await base_query.offset(offset).limit(limit)
+
+    is_op, is_adm, is_tech = await TaskVisibilityService.get_user_context(
+        current_user,
+        subject
+    )
+
+    serialized = TaskVisibilityService.filter_and_serialize(
+        tasks,
+        current_user,
+        position.bank,
+        is_op,
+        is_adm,
+        is_tech
+    )
+
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": (total + limit - 1) // limit,
+        "items": serialized
+    }
+
+
+@router.get("/tasks")
+@min_perms(1)
+async def list_tasks(
+    bank_id: int | None = None,
+    position_id: int | None = None,
+    status: int | None = None,
+    q: str | None = None,
+    page: int = 1,
+    limit: int = 20,
+    current_user: User = Depends(get_current_user)
+):
+    offset = (page - 1) * limit
+    query = Task.filter(is_deleted=False)
+
+    if bank_id:
+        query = query.filter(position__bank_id=bank_id)
+    if position_id:
+        query = query.filter(position_id=position_id)
+    if status is not None:
+        query = query.filter(status=status)
+    if q:
+        query = query.filter(text__icontains=q)
+
+    total = await query.count()
+    tasks = await query.offset(offset).limit(limit).prefetch_related(
+        "position__bank__subject"
+    )
+
+    subject = tasks[0].position.bank.subject if tasks else None
+
+    if subject:
+        is_op, is_adm, is_tech = await TaskVisibilityService.get_user_context(
+            current_user,
+            subject
+        )
+    else:
+        is_op = is_adm = is_tech = False
+
+    serialized = TaskVisibilityService.filter_and_serialize(
+        tasks,
+        current_user,
+        tasks[0].position.bank if tasks else None,
+        is_op,
+        is_adm,
+        is_tech
+    )
+
+    return {
+        "page": page,
+        "limit": limit,
+        "total": total,
+        "pages": (total + limit - 1) // limit,
+        "items": serialized
+    }
