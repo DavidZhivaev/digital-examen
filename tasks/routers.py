@@ -10,8 +10,6 @@ import shutil
 from docx import Document
 from lxml import etree
 from pathlib import Path
-from marker.convert import convert_single_pdf
-from marker.models import load_all_models
 from tasks.audit import log_audit
 from tasks.permissions import assert_subject_access, can_create_bank, can_create_task, can_moderate_subject
 from core.config import settings

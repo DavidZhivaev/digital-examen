@@ -17,7 +17,6 @@ from mail.routers import router as mail_router
 from users.routers import router as users_router
 from rooms.routers import router as rooms_router
 from seating.routers import router as seating_router
-from works.routers import router as works_router
 from subjects.routers import router as subjects_router
 from tasks.routers import router as tasks_router
 from files.routers import router as files_router
@@ -61,7 +60,6 @@ app.include_router(mail_router, prefix="/api/mail", tags=["mail"])
 app.include_router(rooms_router, prefix="/api/classrooms", tags=["classrooms"])
 app.include_router(subjects_router, prefix="/api/subjects", tags=["subjects"])
 app.include_router(seating_router, prefix="/api/seating", tags=["seating"])
-app.include_router(works_router, prefix="/api/works", tags=["works"])
 
 init_db(app)
 
