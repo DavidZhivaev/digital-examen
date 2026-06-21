@@ -14,7 +14,7 @@ from core.config import settings
 from core.permissions import min_perms
 from classes.models import SchoolClass
 from core.security import hash_password
-from users.admin_service import validate_admin_can_manage, validate_assignable_role
+from users.admin_service import validate_admin_can_manage, validate_assignable_role, validate_teacher_perms
 from users.models import User
 from users.role_service import validate_role_change
 from core.roles import ROLE_TEACHER, ROLE_STUDENT
@@ -91,21 +91,21 @@ async def health():
 
 
 @router.get("/me", response_model=UserResponse)
-@min_perms(1)
+@min_perms(settings.STUDENT_ROLE)
 async def get_me(current_user: User):
     return user_response(current_user)
 
 
 @router.patch("/me", response_model=UserResponse)
-@min_perms(1)
+@min_perms(settings.STUDENT_ROLE)
 async def update_me(body: UserSelfUpdate, current_user: User):
     data = body.model_dump(exclude_unset=True)
     password_changed = "password" in data
     if password_changed:
         data["password_hash"] = hash_password(data.pop("password"))
 
-    if current_user.role == 1 and ("first_name" in data or "last_name" in data or "middle_name" in data or "sex" in data):
-        raise HTTPException(status_code=403, detail="Существенные изменения в УЗ могут вносить только сотрудники школы!")
+    if current_user.role == settings.STUDENT_ROLE and ("first_name" in data or "last_name" in data or "middle_name" in data or "sex" in data):
+        raise HTTPException(status_code=403, detail="Существенные изменения в учетной записи могут вносить только сотрудники школы!")
 
     for field, value in data.items():
         setattr(current_user, field, value)
@@ -120,7 +120,7 @@ async def update_me(body: UserSelfUpdate, current_user: User):
 
 
 @router.get("/", response_model=PaginatedUsersResponse)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.TEACHER_ROLE)
 async def list_users(
     current_user: User,
     page: int = Query(1, ge=1),
@@ -167,12 +167,12 @@ async def get_roles(current_user: User):
 async def get_me(current_user: User):
     subsystems = []
     k = 1
-    for name in ["Работы", "Банк задач", "Настройки", "Контингент", "Рассадка", "Аудитории", "Обработка ЭМ", "Аналитика"]:
+    for name in ["Работы", "Банк задач", "Настройки", "Контингент", "Рассадка", "Аудитории", "Обработка", "Аналитика"]:
         if k < 4:
             subsystems.append({
                 "name": name,
                 "id": k,
-                "min_perms": 1 
+                "min_perms": 1
             })
         elif k < 6:
             subsystems.append({
@@ -195,7 +195,7 @@ async def get_me(current_user: User):
 
 
 @router.get("/{person_id}", response_model=UserResponse)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.TEACHER_ROLE)
 async def get_user(person_id: UUID, current_user: User):
     user = await User.get_or_none(person_id=str(person_id))
     if user is None:
@@ -206,7 +206,7 @@ async def get_user(person_id: UUID, current_user: User):
 
 
 @router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-@min_perms(ROLE_TEACHER)
+@min_perms(settings.TEACHER_ROLE)
 async def create_user(body: UserCreate, current_user: User):
     if current_user.role == ROLE_TEACHER:
         if body.role != ROLE_STUDENT:
@@ -294,7 +294,7 @@ async def create_user(body: UserCreate, current_user: User):
     return user_response(user)
 
 @router.patch("/{person_id}/role", response_model=UserResponse)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.OPERATOR_ROLE)
 async def update_user_role(person_id: UUID, body: RoleUpdate, current_user: User):
     user = await User.get_or_none(person_id=str(person_id))
     if user is None:
@@ -312,16 +312,17 @@ async def update_user_role(person_id: UUID, body: RoleUpdate, current_user: User
 
 
 @router.patch("/{person_id}", response_model=UserResponse)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.TEACHER_ROLE)
 async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
     user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    
+    await validate_teacher_perms(current_user, user)
 
     validate_admin_can_manage(current_user, user)
 
     data = body.model_dump(exclude_unset=True)
-    password_changed = "password" in data
     role_changed = "role" in data
 
     if role_changed:
@@ -329,9 +330,6 @@ async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
 
     if "role" in data:
         validate_assignable_role(current_user, data["role"])
-
-    if password_changed:
-        data["password_hash"] = hash_password(data.pop("password"))
 
     for field, value in data.items():
         setattr(user, field, value)
@@ -345,18 +343,17 @@ async def update_user(person_id: UUID, body: UserUpdate, current_user: User):
             detail="Пользователь с таким email или логином уже существует",
         )
 
-    if password_changed or role_changed:
-        await revoke_all_user_sessions(user.id)
-
     return user_response(user)
 
 
 @router.post("/{person_id}/force-password-reset")
-@min_perms(settings.OPERATOR_ROLE)
+@min_perms(settings.TEACHER_ROLE)
 async def force_password_reset(person_id: UUID, current_user: User):
     user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    
+    await validate_teacher_perms(current_user, user)
 
     raw_token = await mark_user_must_set_password(user)
     await revoke_all_user_sessions(user.id)
@@ -366,7 +363,7 @@ async def force_password_reset(person_id: UUID, current_user: User):
         await send_password_email(
             to=user.email,
             subject="Смена пароля",
-            greeting=f"Здравствуйте, {user.last_name} {user.first_name}!",
+            greeting=f"Здравствуйте, {user.last_name} {user.first_name}! Сотрудник школы {current_user.first_name} {current_user.middle_name} отозвал{'(а)' if current_user.sex == 2 else ''} ваш текущий пароль, пожалуйста, установите новый, перейдя по данной ссылке! Доступ к аккаунту будет ограничен, пока вы не измените свой пароль.",
             link=link,
         )
     except Exception as exc:
@@ -379,11 +376,13 @@ async def force_password_reset(person_id: UUID, current_user: User):
 
 
 @router.delete("/{person_id}", status_code=status.HTTP_204_NO_CONTENT)
-@min_perms(settings.ADMIN_ROLE)
+@min_perms(settings.TEACHER_ROLE)
 async def delete_user(person_id: UUID, current_user: User):
     user = await User.get_or_none(person_id=str(person_id))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+    
+    await validate_teacher_perms(current_user, user)
     
     if user.id == current_user.id:
         raise HTTPException(
@@ -391,13 +390,9 @@ async def delete_user(person_id: UUID, current_user: User):
             detail="Нельзя удалить собственную учётную запись!",
         )
 
-    user = await User.get_or_none(id=user.id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
-
     validate_admin_can_manage(current_user, user)
 
-    if user.role >= settings.ADMIN_ROLE:
+    if user.role >= settings.ADMIN_ROLE and current_user.role != 4:
         admin_count = await User.filter(role__gte=settings.ADMIN_ROLE).count()
         if admin_count <= 1:
             raise HTTPException(
@@ -407,4 +402,3 @@ async def delete_user(person_id: UUID, current_user: User):
 
     await revoke_all_user_sessions(user.id)
     await user.delete()
-    return None

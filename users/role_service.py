@@ -17,7 +17,7 @@ async def validate_role_change(actor: User, target: User, new_role: int) -> None
             detail="Некорректная роль",
         )
 
-    if new_role >= actor.role:
+    if new_role >= actor.role and actor.role != 4:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нельзя назначить роль выше или равную своей",

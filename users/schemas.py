@@ -50,7 +50,6 @@ class UserCreate(BaseModel):
 class UserUpdate(BaseModel):
     email: EmailStr | None = None
     login: str | None = Field(None, min_length=3, max_length=64)
-    password: str | None = Field(None, min_length=8, max_length=128)
     role: int | None = Field(None, ge=1)
     class_id: int | None = Field(None, alias="class")
     first_name: str | None = Field(None, min_length=1, max_length=255)
