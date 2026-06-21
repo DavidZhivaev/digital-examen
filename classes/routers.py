@@ -5,9 +5,11 @@ from fastapi import UploadFile, File
 from fastapi.responses import StreamingResponse
 import io
 from openpyxl import Workbook, load_workbook
+from tortoise.expressions import Q
 
 from classes.models import SchoolClass, TeacherAssignment
 from fastapi import Query
+from subjects.models import Subject
 from users.routers import transliterate
 from tortoise.transactions import in_transaction
 from classes.service import (
@@ -375,14 +377,26 @@ async def assign_teacher(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Этот учитель уже назначен на данный предмет в этой группе/классе."
         )
+    
+    exists = await Subject.filter(
+        id=body.subject
+    ).filter(
+        Q(admins__id=body.teacher_id) | Q(teachers__id=body.teacher_id)
+    ).exists()
 
-    assignment = await assign_teacher_to_class(
-        actor=current_user,
-        teacher_id=body.teacher_id,
-        school_class=school_class,
-        group=body.group,
-        subject=body.subject
-    )
+    if exists:
+        assignment = await assign_teacher_to_class(
+            actor=current_user,
+            teacher_id=body.teacher_id,
+            school_class=school_class,
+            group=body.group,
+            subject=body.subject
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Этот учитель не является учителем данного предмета"
+        )
 
     return TeacherAssignmentResponse(
         id=assignment.id,
