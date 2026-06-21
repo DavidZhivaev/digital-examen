@@ -177,6 +177,7 @@ async def login(body: LoginRequest, request: Request):
 
 
 @router.post("/refresh", response_model=TokenResponse)
+@min_perms(settings.STUDENT_ROLE)
 async def refresh(body: RefreshRequest):
     try:
         payload_refresh = decode_token(body.refresh_token)
@@ -229,6 +230,7 @@ async def set_password(body: SetPasswordRequest):
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@min_perms(settings.STUDENT_ROLE)
 async def logout(body: LogoutRequest):
     try:
         payload = decode_token(body.refresh_token)
@@ -250,14 +252,14 @@ async def logout(body: LogoutRequest):
 
 
 @router.get("/sessions", response_model=list[SessionResponse])
-@min_perms(1)
+@min_perms(settings.STUDENT_ROLE)
 async def list_sessions(current_user: User):
     sessions = await Session.filter(user_id=current_user.id).order_by("-created_at")
     return [session_response(s) for s in sessions]
 
 
 @router.delete("/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-@min_perms(1)
+@min_perms(settings.STUDENT_ROLE)
 async def revoke_session(session_id: int, current_user: User):
     session = await Session.get_or_none(id=session_id, user_id=current_user.id)
     if session is None:
@@ -271,7 +273,7 @@ async def revoke_session(session_id: int, current_user: User):
 
 
 @router.post("/logout-all", status_code=status.HTTP_204_NO_CONTENT)
-@min_perms(1)
+@min_perms(settings.STUDENT_ROLE)
 async def logout_all(current_user: User):
     await revoke_all_user_sessions(current_user.id)
     return None
