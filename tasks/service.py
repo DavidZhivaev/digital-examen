@@ -6,10 +6,8 @@ from tasks.models import TaskBank, TaskPosition, Task, TaskReview, TaskRevision
 import os
 import shutil
 from docx import Document
-from lxml import etree
 from pathlib import Path
 from docx import Document
-from lxml import etree
 from pathlib import Path
 import fitz
 
@@ -117,88 +115,3 @@ class TaskVisibilityService:
             data["author_id"] = t.author_id
             data["status"] = t.status
         return data
-    
-
-XSLT_CHUNKS = """<xsl:stylesheet version="1.0"
-xmlns:xsl="http://www.w3.org/1999/XSL/Transform"
-xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">
-
-    <xsl:template match="m:oMath">
-        <xsl:text> $</xsl:text>
-        <xsl:apply-templates/>
-        <xsl:text>$ </xsl:text>
-    </xsl:template>
-
-    <xsl:template match="m:f">
-        <xsl:text>\\frac{</xsl:text>
-        <xsl:apply-templates select="m:num"/>
-        <xsl:text>}{</xsl:text>
-        <xsl:apply-templates select="m:den"/>
-        <xsl:text>}</xsl:text>
-    </xsl:template>
-
-    <xsl:template match="m:sup">
-        <xsl:apply-templates select="m:e"/>
-        <xsl:text>^{</xsl:text>
-        <xsl:apply-templates select="m:sup"/>
-        <xsl:text>}</xsl:text>
-    </xsl:template>
-
-    <xsl:template match="m:sub">
-        <xsl:apply-templates select="m:e"/>
-        <xsl:text>_{</xsl:text>
-        <xsl:apply-templates select="m:sub"/>
-        <xsl:text>}</xsl:text>
-    </xsl:template>
-
-    <xsl:template match="m:t">
-        <xsl:value-of select="."/>
-    </xsl:template>
-
-</xsl:stylesheet>"""
-
-xslt_root = etree.XML(XSLT_CHUNKS)
-transform = etree.XSLT(xslt_root)
-
-
-def convert_docx_to_math_text(file_path: str) -> str:
-    doc = Document(file_path)
-    full_text = []
-
-    for paragraph in doc.paragraphs:
-        p_xml = paragraph._p
-
-        if "math" in p_xml.xml:
-            try:
-                tree = etree.fromstring(p_xml.xml.encode("utf-8"))
-                result_xml = transform(tree)
-
-                clean_text = "".join(result_xml.xpath("//text()"))
-                clean_text = " ".join(clean_text.split())
-
-                if clean_text:
-                    full_text.append(clean_text)
-
-            except Exception:
-                if paragraph.text.strip():
-                    full_text.append(paragraph.text.strip())
-
-        else:
-            if paragraph.text.strip():
-                full_text.append(paragraph.text.strip())
-
-    return "\n\n".join(full_text)
-
-
-def convert_pdf_to_math_text(file_path: str) -> str:
-    doc = fitz.open(file_path)
-
-    full_text = []
-
-    for page in doc:
-        text = page.get_text("text")
-
-        if text and text.strip():
-            full_text.append(text.strip())
-
-    return "\n\n".join(full_text)

@@ -8,7 +8,6 @@ from subjects.models import Subject
 import os
 import shutil
 from docx import Document
-from lxml import etree
 from pathlib import Path
 from tasks.audit import log_audit
 from tasks.permissions import assert_subject_access, can_create_bank, can_create_task, can_moderate_subject
