@@ -9,7 +9,6 @@ from docx import Document
 from pathlib import Path
 from docx import Document
 from pathlib import Path
-import fitz
 
 def stable_hash(bank_id: int, task_id: uuid.UUID) -> int:
     key = f"{bank_id}:{str(task_id)}"
