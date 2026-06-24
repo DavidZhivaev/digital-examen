@@ -9,3 +9,9 @@ class UploadFileResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class WorkUploadResponse(BaseModel):
+    work_id: uuid.UUID
+    scans_processed: int
+    status: str

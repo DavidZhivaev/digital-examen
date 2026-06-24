@@ -11,3 +11,17 @@ class UploadedFile(models.Model):
 
     class Meta:
         table = "uploaded_files"
+
+
+class WorkScan(models.Model):
+    id = fields.UUIDField(pk=True)
+    work_id = fields.UUIDField(index=True)
+    work_number = fields.IntField()
+    results = fields.JSONField(null=True)
+    
+    created_at = fields.DatetimeField(auto_now_add=True)
+    updated_at = fields.DatetimeField(auto_now=True)
+
+    class Meta:
+        table = "work_scans"
+        unique_together = (("work_id", "work_number"),)
