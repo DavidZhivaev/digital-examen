@@ -15,6 +15,7 @@ def init_db(app):
                 "rooms.models",
                 "subjects.models",
                 "tasks.models",
+                "works.models",
                 "files.models",
             ]
         },

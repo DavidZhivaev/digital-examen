@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pathlib import Path
 
+from core.config import settings
 from core.permissions import min_perms
 from users.models import User
 from files.models import UploadedFile, WorkScan
@@ -64,7 +65,7 @@ async def download_file(file_id: uuid.UUID):
 
 
 @router.post("/upload/work/{work_id}", response_model=WorkUploadResponse)
-@min_perms(2)
+@min_perms(settings.OPERATOR_ROLE)
 async def upload_work_scans(work_id: uuid.UUID, current_user: User, file: UploadFile = File(...)):
     work_dir = WORKS_BASE_DIR / str(work_id)
     if not work_dir.exists() or not work_dir.is_dir():
