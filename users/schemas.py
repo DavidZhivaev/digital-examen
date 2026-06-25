@@ -60,13 +60,6 @@ class UserUpdate(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    @field_validator("password")
-    @classmethod
-    def validate_password_strength(cls, value: str | None) -> str | None:
-        if value is not None and not _PASSWORD_RE.match(value):
-            raise ValueError("Пароль должен быть не короче 8 символов и содержать буквы и цифры")
-        return value
-
 
 class RoleUpdate(BaseModel):
     role: int = Field(ge=1)
