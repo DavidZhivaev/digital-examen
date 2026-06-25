@@ -13,8 +13,9 @@ def init_db(app):
                 "auth.models",
                 "classes.models",
                 "rooms.models",
-                "works.models",
-                "subjects.models"
+                "subjects.models",
+                "tasks.models",
+                "files.models",
             ]
         },
         generate_schemas=True,

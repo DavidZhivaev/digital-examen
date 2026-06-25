@@ -1,13 +1,34 @@
+import secrets
+import string
+
 from tortoise import fields, models
+
+
+TASK_CODE_ALPHABET = string.digits + string.ascii_uppercase
+
+
+def generate_task_code() -> str:
+    return "".join(secrets.choice(TASK_CODE_ALPHABET) for _ in range(6))
+
 
 class TaskBank(models.Model):
     id = fields.IntField(pk=True)
+    title = fields.CharField(max_length=255, default="Банк задач")
     subject = fields.ForeignKeyField("models.Subject", related_name="task_banks", on_delete=fields.CASCADE)
     parallel = fields.IntField()
+
+    is_global = fields.BooleanField(default=True)
     is_open = fields.BooleanField(default=False)
     visibility_percent = fields.IntField(default=100)
     positions_count = fields.IntField()
     created_by = fields.ForeignKeyField("models.User", related_name="created_task_banks", on_delete=fields.CASCADE)
+
+    access_teachers = fields.ManyToManyField(
+        "models.User",
+        related_name="accessible_task_banks",
+        through="task_bank_teachers",
+    )
+
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
@@ -19,6 +40,8 @@ class TaskPosition(models.Model):
     order = fields.IntField()
     min_score = fields.FloatField(default=0.0)
     max_score = fields.FloatField(default=12.0)
+    criteria_text = fields.TextField(null=True)
+    scoring = fields.JSONField(default=list)
 
     class Meta:
         table = "task_positions"
@@ -26,6 +49,7 @@ class TaskPosition(models.Model):
 
 class Task(models.Model):
     id = fields.UUIDField(pk=True)
+    code = fields.CharField(max_length=6, unique=True, index=True, default=generate_task_code)
 
     position = fields.ForeignKeyField(
         "models.TaskPosition",
@@ -130,7 +154,7 @@ class TaskReview(models.Model):
         max_length=32
     )
 
-    comment = fields.TextField()
+    comment = fields.TextField(null=True)
     created_at = fields.DatetimeField(
         auto_now_add=True
     )

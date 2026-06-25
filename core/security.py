@@ -5,14 +5,38 @@ from pathlib import Path
 
 import bcrypt
 import jwt
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.exceptions import InvalidTokenError
 
 from core.config import settings
 
 
+def create_dev_keys(private_path: Path, public_path: Path):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    private_pem = key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    public_pem = key.public_key().public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+
+    private_path.parent.mkdir(parents=True, exist_ok=True)
+    public_path.parent.mkdir(parents=True, exist_ok=True)
+    private_path.write_bytes(private_pem)
+    public_path.write_bytes(public_pem)
+
+
 def get_keys() -> tuple[str, str]:
     private_path = Path(settings.PRIVATE_KEY_PATH)
     public_path = Path(settings.PUBLIC_KEY_PATH)
+
+    if settings.DEBUG and (not private_path.exists() or not public_path.exists()):
+        create_dev_keys(private_path, public_path)
 
     if not private_path.exists():
         raise RuntimeError(
