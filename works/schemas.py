@@ -5,9 +5,10 @@ import uuid
 from pydantic import BaseModel, Field, model_validator
 
 
-class GradeThreshold(BaseModel):
-    from_percent: float = Field(ge=0, le=100)
+class GradeRule(BaseModel):
     grade: float = Field(ge=2, le=5)
+    min_points: float = Field(ge=0)
+    min_clean_pluses: int | None = Field(default=None, ge=0)
 
 
 class WorkCreate(BaseModel):
@@ -19,9 +20,11 @@ class WorkCreate(BaseModel):
     observer_ids: list[int] = Field(default_factory=list)
     task_bank_id: int | None = None
     task_count: int | None = Field(default=None, ge=1)
+    written_task_count: int | None = Field(default=None, ge=0)
+    variant_count: int | None = Field(default=None, ge=1)
     test_config_key: str | None = None
     send_notifications: bool = False
-    grading_scale: list[GradeThreshold] = Field(default_factory=list)
+    grading_scale: list[GradeRule] = Field(default_factory=list)
 
 
 class WorkUpdate(BaseModel):
@@ -30,6 +33,7 @@ class WorkUpdate(BaseModel):
     room_ids: list[int] | None = None
     scheduled_at: datetime | None = None
     task_count: int | None = Field(default=None, ge=1)
+    written_task_count: int | None = Field(default=None, ge=0)
     test_config_key: str | None = None
 
 
@@ -39,8 +43,17 @@ class WorkSeatingRequest(BaseModel):
 
 
 class WorkScoreItem(BaseModel):
-    student_id: int
+    student_id: int | None = None
+    work_number: int | None = None
+    participant_code: str | None = Field(default=None, pattern=r"^\d{13}$")
+    blank_code: str | None = Field(default=None, pattern=r"^\d{13}$")
     points: dict[int, float]
+
+    @model_validator(mode="after")
+    def validate_identifier(self):
+        if not any([self.student_id, self.work_number, self.participant_code, self.blank_code]):
+            raise ValueError("Нужно указать student_id, work_number, participant_code или blank_code")
+        return self
 
 
 class WorkScoresUpdate(BaseModel):
@@ -50,11 +63,13 @@ class WorkScoresUpdate(BaseModel):
 class WorkVariantPrintRequest(BaseModel):
     student_id: int | None = None
     room_id: int | None = None
+    student_ids: list[int] | None = None
 
     @model_validator(mode="after")
     def validate_target(self):
-        if bool(self.student_id) == bool(self.room_id):
-            raise ValueError("Нужно выбрать ровно одного учащегося или одну аудиторию")
+        selected = [bool(self.student_id), bool(self.room_id), bool(self.student_ids)]
+        if sum(selected) != 1:
+            raise ValueError("Нужно выбрать одного учащегося, список учащихся или одну аудиторию")
         return self
 
 
@@ -68,6 +83,15 @@ class WorkRecognitionConfirm(BaseModel):
 
 class WorkRecognitionAssign(BaseModel):
     user_ids: list[int] = Field(min_length=1)
+
+
+class WorkAddStudent(BaseModel):
+    student_id: int
+    room_id: int | None = None
+
+
+class WorkRegenerateVariants(BaseModel):
+    variant_count: int | None = Field(default=None, ge=1)
 
 
 class WorkScanUploadResponse(BaseModel):
@@ -88,6 +112,8 @@ class WorkResponse(BaseModel):
     subject_id: int
     scheduled_at: datetime
     task_count: int
+    written_task_count: int
+    variant_count: int | None = None
     test_config_key: str | None = None
     send_notifications: bool
     creator_id: int

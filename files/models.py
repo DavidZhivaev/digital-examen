@@ -17,6 +17,9 @@ class WorkScan(models.Model):
     id = fields.UUIDField(pk=True)
     work_id = fields.UUIDField(index=True)
     work_number = fields.IntField()
+    participant_code = fields.CharField(max_length=13, null=True, index=True)
+    blank_code = fields.CharField(max_length=13, null=True, index=True)
+    next_blank_code = fields.CharField(max_length=13, null=True)
     results = fields.JSONField(null=True)
     
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -24,4 +27,4 @@ class WorkScan(models.Model):
 
     class Meta:
         table = "work_scans"
-        unique_together = (("work_id", "work_number"),)
+        unique_together = (("work_id", "work_number", "blank_code"),)

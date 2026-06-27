@@ -1,5 +1,6 @@
 import hashlib
 import math
+import re
 import uuid
 
 from fastapi import HTTPException
@@ -14,6 +15,24 @@ TASK_STATUS_DRAFT = 0
 TASK_STATUS_PENDING = 1
 TASK_STATUS_APPROVED = 2
 TASK_STATUS_REJECTED = 3
+
+
+def validate_latex_content(*values: str | None):
+    for value in values:
+        if not value:
+            continue
+
+        if value.count("$") % 2 != 0:
+            raise HTTPException(400, "LaTeX содержит незакрытый символ $")
+
+        pairs = [("{", "}"), ("[", "]"), ("(", ")")]
+        for left, right in pairs:
+            if value.count(left) != value.count(right):
+                raise HTTPException(400, f"LaTeX содержит несбалансированные скобки {left}{right}")
+
+        for command in re.findall(r"\\[A-Za-z]+", value):
+            if len(command) == 1:
+                raise HTTPException(400, "LaTeX содержит битую команду")
 
 
 def stable_hash(bank_id: int, task_id: uuid.UUID) -> int:
@@ -267,7 +286,7 @@ class TaskVisibilityService:
         if context["normal_view"]:
             visible_tasks.sort(key=lambda task: (TaskVisibilityService._position_order(task), task.code))
         else:
-            visible_tasks.sort(key=lambda task: stable_hash(bank.id, task.id))
+            visible_tasks.sort(key=lambda task: (TaskVisibilityService._position_order(task), task.code))
 
         review_map = await latest_review_comments([task.id for task in visible_tasks])
 

@@ -65,6 +65,10 @@ class RoleUpdate(BaseModel):
     role: int = Field(ge=1)
 
 
+class RoleTitleUpdate(BaseModel):
+    role_title: str | None = Field(default=None, max_length=255)
+
+
 class UserSelfUpdate(BaseModel):
     email: EmailStr | None = None
     password: str | None = Field(None, min_length=8, max_length=128)
@@ -87,6 +91,9 @@ class UserResponse(BaseModel):
     email: str
     login: str
     role: int
+    role_title: str | None = None
+    is_active: bool = False
+    activated_at: datetime | None = None
     register_at: datetime
     class_id: int | None = Field(None, alias="class")
     class_group: int | None = None

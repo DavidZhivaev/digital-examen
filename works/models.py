@@ -5,10 +5,10 @@ from tortoise import fields, models
 
 def default_grading_scale() -> list[dict]:
     return [
-        {"from_percent": 0, "grade": 2},
-        {"from_percent": 50, "grade": 3},
-        {"from_percent": 70, "grade": 4},
-        {"from_percent": 85, "grade": 5},
+        {"grade": 2, "min_points": 0, "min_clean_pluses": None},
+        {"grade": 3, "min_points": 0, "min_clean_pluses": None},
+        {"grade": 4, "min_points": 0, "min_clean_pluses": None},
+        {"grade": 5, "min_points": 0, "min_clean_pluses": None},
     ]
 
 
@@ -25,6 +25,8 @@ class Work(models.Model):
     )
 
     task_count = fields.IntField()
+    written_task_count = fields.IntField(default=0)
+    variant_count = fields.IntField(null=True)
     scheduled_at = fields.DatetimeField()
     test_config_key = fields.CharField(max_length=255, null=True)
     send_notifications = fields.BooleanField(default=False)
@@ -67,7 +69,12 @@ class WorkParticipant(models.Model):
 
     seat = fields.CharField(max_length=16, null=True)
     work_number = fields.IntField()
+    participant_code = fields.CharField(max_length=13, unique=True, index=True)
+    variant_number = fields.IntField(null=True)
+    variant_tasks = fields.JSONField(default=dict)
+    blank_chain = fields.JSONField(default=dict)
     points = fields.JSONField(default=dict)
+    clean_pluses = fields.IntField(default=0)
     percent = fields.FloatField(null=True)
     grade = fields.FloatField(null=True)
 
@@ -77,7 +84,7 @@ class WorkParticipant(models.Model):
     class Meta:
         table = "work_participants"
         unique_together = (("work", "student"), ("work", "work_number"))
-        indexes = (("work_id", "student_id"),)
+        indexes = (("work_id", "student_id"), ("work_id", "participant_code"))
 
 
 class WorkTestReviewer(models.Model):
@@ -104,6 +111,7 @@ class WorkRecognitionItem(models.Model):
     work = fields.ForeignKeyField("models.Work", related_name="recognition_items", on_delete=fields.CASCADE)
     scan_id = fields.UUIDField(null=True, index=True)
     work_number = fields.IntField()
+    participant_code = fields.CharField(max_length=13, null=True, index=True)
     position = fields.IntField()
 
     expected_chars = fields.CharField(max_length=255)

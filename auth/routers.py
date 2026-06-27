@@ -223,7 +223,9 @@ async def set_password(body: SetPasswordRequest):
     user = await consume_password_token(body.token)
     user.password_hash = hash_password(body.password)
     user.must_set_password = False
-    await user.save(update_fields=["password_hash", "must_set_password"])
+    user.is_active = True
+    user.activated_at = utcnow()
+    await user.save(update_fields=["password_hash", "must_set_password", "is_active", "activated_at"])
     await revoke_user_password_tokens(user.id)
     await revoke_all_user_sessions(user.id)
     return {"detail": "Пароль успешно установлен"}

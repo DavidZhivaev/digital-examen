@@ -17,7 +17,8 @@ def utcnow() -> datetime:
 
 async def create_password_token(user: User, purpose: str) -> str:
     raw_token = secrets.token_urlsafe(48)
-    expires_at = utcnow() + timedelta(hours=settings.PASSWORD_TOKEN_EXPIRE_HOURS)
+    hours = 24 * 365 * 100 if purpose == "activation" else settings.PASSWORD_TOKEN_EXPIRE_HOURS
+    expires_at = utcnow() + timedelta(hours=hours)
     await PasswordToken.create(
         user=user,
         token_hash=hash_token(raw_token),
@@ -54,9 +55,10 @@ async def consume_password_token(raw_token: str, *, expected_purpose: str | None
 
 async def mark_user_must_set_password(user: User) -> str:
     user.must_set_password = True
+    user.is_active = False
     user.password_hash = UNUSABLE_PASSWORD_HASH
-    await user.save(update_fields=["must_set_password", "password_hash"])
-    return await create_password_token(user, purpose="reset")
+    await user.save(update_fields=["must_set_password", "is_active", "password_hash"])
+    return await create_password_token(user, purpose="activation")
 
 async def revoke_user_password_tokens(user_id: int):
     await PasswordToken.filter(

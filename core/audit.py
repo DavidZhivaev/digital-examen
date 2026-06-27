@@ -186,3 +186,24 @@ class AuthAuditMiddleware(BaseHTTPMiddleware):
             logger.info(json.dumps(
                 log_data, ensure_ascii=False
             ))
+
+            try:
+                from core.models import AuditEvent
+
+                await AuditEvent.create(
+                    user_id=auth_context.get("user_id"),
+                    person_id=auth_context.get("person_id"),
+                    role=auth_context.get("role"),
+                    method=request.method,
+                    path=request.url.path,
+                    status=response.status_code if response else 500,
+                    action=f"{request.method} {request.url.path}",
+                    details={
+                        "query": query_params,
+                        "body": body,
+                        "duration_ms": duration_ms,
+                        "suspicious": is_suspicious(query_params, body),
+                    },
+                )
+            except Exception:
+                pass

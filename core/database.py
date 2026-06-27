@@ -10,12 +10,14 @@ def init_db(app):
         modules={
             "models": [
                 "users.models",
+                "core.models",
                 "auth.models",
                 "classes.models",
                 "rooms.models",
                 "subjects.models",
                 "tasks.models",
                 "works.models",
+                "blanks.models",
                 "files.models",
             ]
         },

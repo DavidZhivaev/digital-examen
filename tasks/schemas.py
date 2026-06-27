@@ -56,10 +56,10 @@ class TaskCreate(BaseModel):
     position_id: int
     text: str = Field(min_length=1)
     solution: str | None = None
-    answer: str | None = None
+    answer: str = Field(min_length=1)
     image_url: str | None = None
     image_scale: float | None = None
-    image_position: str | None = None
+    image_position: str | None = Field(default=None, pattern="^(right|bottom)$")
 
 
 class TaskUpdate(BaseModel):
@@ -69,7 +69,7 @@ class TaskUpdate(BaseModel):
     answer: str | None = None
     image_url: str | None = None
     image_scale: float | None = None
-    image_position: str | None = None
+    image_position: str | None = Field(default=None, pattern="^(right|bottom)$")
 
 
 class TaskMove(BaseModel):

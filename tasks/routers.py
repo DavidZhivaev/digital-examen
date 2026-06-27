@@ -45,6 +45,7 @@ from tasks.service import (
     is_public_task,
     paginate,
     reorder_positions,
+    validate_latex_content,
 )
 from users.models import User
 
@@ -375,6 +376,7 @@ async def create_task(body: TaskCreate, current_user: User):
 
     is_direct_editor = await can_manage_bank(current_user, bank) or await can_moderate_subject(current_user, subject)
     status = TASK_STATUS_APPROVED if is_direct_editor else TASK_STATUS_PENDING
+    validate_latex_content(body.text, body.solution, body.answer)
 
     task = await Task.create(
         code=await generate_unique_task_code(),
@@ -529,6 +531,23 @@ async def get_position_tasks(
     return paginate(serialized, page, limit)
 
 
+@router.get("/banks/{bank_id}/positions/{position_order}/tasks")
+@min_perms(1)
+async def search_position_tasks(
+    bank_id: int,
+    position_order: int,
+    q: str | None = None,
+    page: int = Query(default=1, ge=1),
+    limit: int = Query(default=10, ge=1, le=100),
+    current_user: User = Depends(get_current_user),
+):
+    position = await TaskPosition.get_or_none(bank_id=bank_id, order=position_order).prefetch_related("bank__subject")
+    if not position:
+        raise HTTPException(404, "Позиция не найдена")
+
+    return await get_position_tasks(position.id, page, limit, q, current_user)
+
+
 @router.patch("/tasks/{task_id}")
 @min_perms(settings.TEACHER_ROLE)
 async def update_task(task_id: uuid.UUID, body: TaskUpdate, current_user: User):
@@ -541,6 +560,7 @@ async def update_task(task_id: uuid.UUID, body: TaskUpdate, current_user: User):
         raise HTTPException(403, "Можно редактировать только свои предложения")
 
     data = body.model_dump(exclude_unset=True)
+    validate_latex_content(data.get("text"), data.get("solution"), data.get("answer"))
 
     if "position_id" in data:
         new_position = await TaskPosition.get_or_none(id=data.pop("position_id")).prefetch_related("bank__subject")

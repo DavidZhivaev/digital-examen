@@ -11,8 +11,10 @@ from users.models import User
 from works.models import Work
 from works.schemas import (
     TestConfigUpdate,
+    WorkAddStudent,
     WorkAnswersPrintRequest,
     WorkCreate,
+    WorkRegenerateVariants,
     WorkRecognitionAssign,
     WorkRecognitionConfirm,
     WorkScanUploadResponse,
@@ -22,6 +24,7 @@ from works.schemas import (
     WorkVariantPrintRequest,
 )
 from works.service import (
+    add_student_to_work,
     answers_print_payload,
     assign_test_reviewers,
     can_view_work,
@@ -39,9 +42,11 @@ from works.service import (
     update_work_from_payload,
     upload_work_scans,
     variant_print_payload,
+    variant_with_solutions_by_codes,
     work_card,
     work_summary,
     confirm_recognition_item,
+    regenerate_variants_for_work,
 )
 
 
@@ -142,6 +147,20 @@ async def regenerate_seating(work_id: uuid.UUID, payload: WorkSeatingRequest, cu
     return await work_card(work, current_user)
 
 
+@router.post("/{work_id}/participants")
+@min_perms(settings.TEACHER_ROLE)
+async def add_participant(work_id: uuid.UUID, payload: WorkAddStudent, current_user: User):
+    work = await get_work_or_404(work_id)
+    return await add_student_to_work(current_user, work, payload.student_id, payload.room_id)
+
+
+@router.post("/{work_id}/variants/regenerate")
+@min_perms(settings.TEACHER_ROLE)
+async def regenerate_variants(work_id: uuid.UUID, payload: WorkRegenerateVariants, current_user: User):
+    work = await get_work_or_404(work_id)
+    return await regenerate_variants_for_work(current_user, work, payload.variant_count)
+
+
 @router.get("/{work_id}/seating/download")
 @min_perms(settings.TEACHER_ROLE)
 async def download_seating(
@@ -186,7 +205,7 @@ async def update_work_scores(work_id: uuid.UUID, payload: WorkScoresUpdate, curr
 async def print_variants(work_id: uuid.UUID, payload: WorkVariantPrintRequest, current_user: User):
     work = await get_work_or_404(work_id)
     await require_work_moderator(current_user, work)
-    return await variant_print_payload(work, payload.student_id, payload.room_id)
+    return await variant_print_payload(work, payload.student_id, payload.room_id, payload.student_ids)
 
 
 @router.post("/{work_id}/variants/answers")
@@ -195,6 +214,18 @@ async def print_answers(work_id: uuid.UUID, payload: WorkAnswersPrintRequest, cu
     work = await get_work_or_404(work_id)
     await require_work_moderator(current_user, work)
     return await answers_print_payload(work, payload.copies)
+
+
+@router.get("/{work_id}/variants/by-codes")
+@min_perms(settings.TEACHER_ROLE)
+async def get_variant_by_codes(
+    work_id: uuid.UUID,
+    participant_code: str,
+    blank_code: str,
+    current_user: User = Depends(get_current_user),
+):
+    work = await get_work_or_404(work_id)
+    return await variant_with_solutions_by_codes(work, current_user, participant_code, blank_code)
 
 
 @router.post("/{work_id}/scans/upload", response_model=WorkScanUploadResponse)

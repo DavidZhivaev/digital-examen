@@ -21,6 +21,7 @@ from subjects.routers import router as subjects_router
 from tasks.routers import router as tasks_router
 from files.routers import router as files_router
 from works.routers import router as works_router
+from blanks.routers import router as blanks_router
 
 setup_logging()
 
@@ -56,6 +57,7 @@ app.include_router(users_router, prefix="/api/users", tags=["users"])
 app.include_router(classes_router, prefix="/api/classes", tags=["classes"])
 app.include_router(tasks_router, prefix="/api/tasks", tags=["tasks"])
 app.include_router(works_router, prefix="/api/works", tags=["works"])
+app.include_router(blanks_router, prefix="/api/blanks", tags=["blanks"])
 app.include_router(files_router, prefix="/api/files", tags=["files"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["analytics"])
 app.include_router(mail_router, prefix="/api/mail", tags=["mail"])

@@ -22,6 +22,7 @@ from classes.models import SchoolClass
 from users.schemas import (
     PaginatedUsersResponse,
     RoleUpdate,
+    RoleTitleUpdate,
     UserCreate,
     UserResponse,
     UserSelfUpdate,
@@ -58,6 +59,9 @@ def user_response(user: User) -> UserResponse:
         email=user.email,
         login=user.login,
         role=user.role,
+        role_title=user.role_title,
+        is_active=user.is_active,
+        activated_at=user.activated_at,
         register_at=user.register_at,
         class_id=user.class_id,
         class_group=user.class_group,
@@ -250,7 +254,8 @@ async def create_user(body: UserCreate, current_user: User):
 
     temp_password = generate_temp_password(12)
     data["password_hash"] = hash_password(temp_password)
-    data["must_set_password"] = False
+    data["must_set_password"] = True
+    data["is_active"] = False
 
     try:
         user = await User.create(**data)
@@ -309,6 +314,33 @@ async def update_user_role(person_id: UUID, body: RoleUpdate, current_user: User
         await revoke_all_user_sessions(user.id)
 
     return user_response(user)
+
+
+@router.patch("/{person_id}/role-title", response_model=UserResponse)
+@min_perms(settings.OPERATOR_ROLE)
+async def update_user_role_title(person_id: UUID, body: RoleTitleUpdate, current_user: User):
+    user = await User.get_or_none(person_id=str(person_id))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    user.role_title = body.role_title
+    user.last_do = utcnow()
+    await user.save(update_fields=["role_title", "last_do"])
+    return user_response(user)
+
+
+@router.get("/classes/{class_id}/inactive")
+@min_perms(settings.TEACHER_ROLE)
+async def inactive_class_users(class_id: int, current_user: User):
+    school_class = await SchoolClass.get_or_none(id=class_id)
+    if not school_class:
+        raise HTTPException(404, "Класс не найден")
+
+    if current_user.role < settings.OPERATOR_ROLE and school_class.teacher_id != current_user.id:
+        raise HTTPException(403, "Недостаточно прав")
+
+    users = await User.filter(class_id=class_id, is_active=False).order_by("last_name", "first_name")
+    return [user_response(user) for user in users]
 
 
 @router.patch("/{person_id}", response_model=UserResponse)
